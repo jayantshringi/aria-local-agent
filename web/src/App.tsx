@@ -3,6 +3,7 @@ import { Sidebar } from "./components/Sidebar";
 import { ChatArea } from "./components/ChatArea";
 import { MessageInput } from "./components/MessageInput";
 import { LoginModal } from "./components/LoginModal";
+import { MemoryModal } from "./components/MemoryModal";
 import { useChat } from "./hooks/useChat";
 import { api, getStoredDevice, getStoredToken, clearStoredAuth, storeAuth } from "./api";
 import { Device, Session } from "./types";
@@ -11,6 +12,8 @@ export const App: React.FC = () => {
   const [token, setToken] = useState<string | null>(getStoredToken());
   const [device, setDevice] = useState<Device | null>(getStoredDevice());
   const [showLoginModal, setShowLoginModal] = useState<boolean>(!token);
+  const [isMemoryModalOpen, setIsMemoryModalOpen] = useState<boolean>(false);
+  const [memoryInitialTab, setMemoryInitialTab] = useState<"about" | "search">("about");
 
   const [sessions, setSessions] = useState<Session[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
@@ -93,6 +96,13 @@ export const App: React.FC = () => {
     <div className="app-container">
       <LoginModal isOpen={showLoginModal} onSuccess={handleLoginSuccess} />
 
+      <MemoryModal
+        isOpen={isMemoryModalOpen}
+        onClose={() => setIsMemoryModalOpen(false)}
+        initialTab={memoryInitialTab}
+        onSelectSession={setActiveSessionId}
+      />
+
       <Sidebar
         sessions={sessions}
         activeSessionId={activeSessionId}
@@ -101,6 +111,10 @@ export const App: React.FC = () => {
         onDeleteSession={handleDeleteSession}
         currentDevice={device}
         onLogout={handleLogout}
+        onOpenMemory={(tab) => {
+          setMemoryInitialTab(tab);
+          setIsMemoryModalOpen(true);
+        }}
       />
 
       <div style={{ flex: 1, display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>

@@ -52,3 +52,22 @@ export type WsServerEvent =
   | { type: "done"; session_id: string; message: Message }
   | { type: "error"; session_id?: string; error: string }
   | { type: "pong" };
+
+export interface ProfileFact {
+  id: string;
+  key: string;
+  value: string;
+  status: "pending" | "approved" | "rejected";
+  confidence?: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface MemorySearchResult {
+  text: string;
+  source_type: string;
+  source_id: string;
+  score: number;
+  created_at?: string;
+}
+

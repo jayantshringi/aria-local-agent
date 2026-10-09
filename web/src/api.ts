@@ -1,4 +1,4 @@
-import { Device, HealthStatus, Message, Session } from "./types";
+import { Device, HealthStatus, MemorySearchResult, Message, ProfileFact, Session } from "./types";
 
 const TOKEN_KEY = "aria_device_token";
 const DEVICE_KEY = "aria_device_info";
@@ -96,4 +96,43 @@ export const api = {
   async listMessages(sessionId: string): Promise<Message[]> {
     return request<Message[]>(`/api/v1/sessions/${sessionId}/messages`);
   },
+
+  // Memory & Profile Facts (Phase 2)
+  async searchMemory(query: string, limit = 5): Promise<MemorySearchResult[]> {
+    const encoded = encodeURIComponent(query);
+    return request<MemorySearchResult[]>(`/api/v1/memory/search?q=${encoded}&limit=${limit}`);
+  },
+
+  async listProfileFacts(status?: string): Promise<ProfileFact[]> {
+    const path = status ? `/api/v1/memory/facts?status=${encodeURIComponent(status)}` : "/api/v1/memory/facts";
+    return request<ProfileFact[]>(path);
+  },
+
+  async createProfileFact(key: string, value: string, status = "approved"): Promise<ProfileFact> {
+    return request<ProfileFact>("/api/v1/memory/facts", {
+      method: "POST",
+      body: JSON.stringify({ key, value, status }),
+    });
+  },
+
+  async updateProfileFact(factId: string, status?: string, value?: string): Promise<ProfileFact> {
+    return request<ProfileFact>(`/api/v1/memory/facts/${factId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ status, value }),
+    });
+  },
+
+  async deleteProfileFact(factId: string): Promise<void> {
+    await request<void>(`/api/v1/memory/facts/${factId}`, {
+      method: "DELETE",
+    });
+  },
+
+  async summarizeSession(sessionId: string): Promise<{ session_id: string; summary: string | null }> {
+    return request<{ session_id: string; summary: string | null }>(
+      `/api/v1/memory/sessions/${sessionId}/summarize`,
+      { method: "POST" }
+    );
+  },
 };
+

@@ -1,5 +1,5 @@
 import React from "react";
-import { MessageSquare, Plus, Trash2, Laptop, ShieldCheck, LogOut } from "lucide-react";
+import { MessageSquare, Plus, Trash2, Laptop, ShieldCheck, LogOut, Search, UserCheck } from "lucide-react";
 import { Device, Session } from "../types";
 
 interface SidebarProps {
@@ -10,6 +10,7 @@ interface SidebarProps {
   onDeleteSession: (id: string) => void;
   currentDevice: Device | null;
   onLogout: () => void;
+  onOpenMemory: (tab: "about" | "search") => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -20,6 +21,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onDeleteSession,
   currentDevice,
   onLogout,
+  onOpenMemory,
 }) => {
   return (
     <aside className="sidebar">
@@ -42,6 +44,24 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <Plus size={18} />
           <span>New Chat</span>
         </button>
+        <div className="sidebar-memory-btns">
+          <button
+            className="btn btn-secondary memory-action-btn"
+            title="Search past chats & memory"
+            onClick={() => onOpenMemory("search")}
+          >
+            <Search size={15} />
+            <span>Search</span>
+          </button>
+          <button
+            className="btn btn-secondary memory-action-btn"
+            title="Profile Memory & Facts (About Me)"
+            onClick={() => onOpenMemory("about")}
+          >
+            <UserCheck size={15} />
+            <span>About Me</span>
+          </button>
+        </div>
       </div>
 
       <div className="session-list">

@@ -286,3 +286,214 @@ async def set_setting(conn: aiosqlite.Connection, key: str, value: str) -> None:
         (key, value),
     )
     await conn.commit()
+
+
+# ---------------------------------------------------------------------------
+# Memory Chunks & Vector Operations (Phase 2)
+# ---------------------------------------------------------------------------
+
+
+async def create_memory_chunk(
+    conn: aiosqlite.Connection,
+    source_type: str,
+    source_id: str,
+    text: str,
+    embedding: list[float] | None = None,
+) -> dict[str, Any]:
+    """Create a memory chunk and index its embedding in sqlite-vec if provided."""
+    chunk_id = str(uuid.uuid4())
+    now = _utc_now_iso()
+
+    await conn.execute(
+        """
+        INSERT INTO memory_chunks (id, source_type, source_id, text, created_at)
+        VALUES (?, ?, ?, ?, ?)
+        """,
+        (chunk_id, source_type, source_id, text, now),
+    )
+
+    if embedding is not None and len(embedding) > 0:
+        try:
+            import sqlite_vec
+
+            serialized = sqlite_vec.serialize_float32(embedding)
+            await conn.execute(
+                "INSERT INTO memory_vectors (chunk_id, embedding) VALUES (?, ?)",
+                (chunk_id, serialized),
+            )
+        except Exception as e:
+            import logging
+
+            logging.getLogger("aria.repository").warning(f"Vector insert error: {e}")
+
+    await conn.commit()
+    return {
+        "id": chunk_id,
+        "source_type": source_type,
+        "source_id": source_id,
+        "text": text,
+        "created_at": now,
+    }
+
+
+async def search_memory_vectors(
+    conn: aiosqlite.Connection,
+    query_embedding: list[float],
+    limit: int = 10,
+) -> list[dict[str, Any]]:
+    """Search nearest memory chunks by dense vector distance in sqlite-vec."""
+    try:
+        import sqlite_vec
+
+        serialized = sqlite_vec.serialize_float32(query_embedding)
+        async with conn.execute(
+            """
+            SELECT v.chunk_id, v.distance, c.source_type, c.source_id, c.text, c.created_at
+            FROM memory_vectors v
+            JOIN memory_chunks c ON c.id = v.chunk_id
+            WHERE v.embedding MATCH ? AND k = ?
+            ORDER BY v.distance ASC
+            """,
+            (serialized, limit),
+        ) as cursor:
+            rows = await cursor.fetchall()
+            return [dict(row) for row in rows]
+    except Exception as e:
+        import logging
+
+        logging.getLogger("aria.repository").warning(f"Vector search error: {e}")
+        return []
+
+
+# ---------------------------------------------------------------------------
+# Profile Facts Operations (Phase 2)
+# ---------------------------------------------------------------------------
+
+
+async def create_profile_fact(
+    conn: aiosqlite.Connection,
+    key: str,
+    value: str,
+    status: str = "pending",
+    confidence: float = 1.0,
+) -> dict[str, Any]:
+    """Create or update a candidate profile fact."""
+    fact_id = str(uuid.uuid4())
+    now = _utc_now_iso()
+
+    # Check if a fact with the same key already exists
+    async with conn.execute("SELECT id, status FROM profile_facts WHERE key = ?", (key,)) as cur:
+        existing = await cur.fetchone()
+        if existing:
+            fact_id = existing["id"]
+            await conn.execute(
+                """
+                UPDATE profile_facts
+                SET value = ?, status = ?, confidence = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (value, status, confidence, now, fact_id),
+            )
+            await conn.commit()
+            return {
+                "id": fact_id,
+                "key": key,
+                "value": value,
+                "status": status,
+                "confidence": confidence,
+                "created_at": now,
+                "updated_at": now,
+            }
+
+    await conn.execute(
+        """
+        INSERT INTO profile_facts (id, key, value, status, confidence, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        (fact_id, key, value, status, confidence, now, now),
+    )
+    await conn.commit()
+    return {
+        "id": fact_id,
+        "key": key,
+        "value": value,
+        "status": status,
+        "confidence": confidence,
+        "created_at": now,
+        "updated_at": now,
+    }
+
+
+async def list_profile_facts(
+    conn: aiosqlite.Connection, status: str | None = None
+) -> list[dict[str, Any]]:
+    """List profile facts, optionally filtered by status ('pending', 'approved', 'rejected')."""
+    if status is not None:
+        async with conn.execute(
+            """
+            SELECT id, key, value, status, confidence, created_at, updated_at
+            FROM profile_facts
+            WHERE status = ?
+            ORDER BY updated_at DESC
+            """,
+            (status,),
+        ) as cursor:
+            rows = await cursor.fetchall()
+            return [dict(row) for row in rows]
+
+    async with conn.execute("""
+        SELECT id, key, value, status, confidence, created_at, updated_at
+        FROM profile_facts
+        ORDER BY updated_at DESC
+        """) as cursor:
+        rows = await cursor.fetchall()
+        return [dict(row) for row in rows]
+
+
+async def get_profile_fact(conn: aiosqlite.Connection, fact_id: str) -> dict[str, Any] | None:
+    """Fetch single profile fact by ID."""
+    async with conn.execute(
+        """
+        SELECT id, key, value, status, confidence, created_at, updated_at
+        FROM profile_facts WHERE id = ?
+        """,
+        (fact_id,),
+    ) as cursor:
+        row = await cursor.fetchone()
+        if not row:
+            return None
+        return dict(row)
+
+
+async def update_profile_fact(
+    conn: aiosqlite.Connection,
+    fact_id: str,
+    status: str | None = None,
+    value: str | None = None,
+) -> dict[str, Any] | None:
+    """Update fact status ('approved', 'rejected') or value."""
+    now = _utc_now_iso()
+    updates = ["updated_at = ?"]
+    params: list[Any] = [now]
+
+    if status is not None:
+        updates.append("status = ?")
+        params.append(status)
+    if value is not None:
+        updates.append("value = ?")
+        params.append(value)
+
+    params.append(fact_id)
+    await conn.execute(
+        f"UPDATE profile_facts SET {', '.join(updates)} WHERE id = ?",
+        params,
+    )
+    await conn.commit()
+    return await get_profile_fact(conn, fact_id)
+
+
+async def delete_profile_fact(conn: aiosqlite.Connection, fact_id: str) -> bool:
+    """Delete profile fact permanently."""
+    cursor = await conn.execute("DELETE FROM profile_facts WHERE id = ?", (fact_id,))
+    await conn.commit()
+    return cursor.rowcount > 0

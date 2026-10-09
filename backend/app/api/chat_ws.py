@@ -124,14 +124,35 @@ async def chat_websocket_endpoint(websocket: WebSocket) -> None:
                     )
                 )
 
-                # 3. Assemble prompt context (persona + recent conversation history)
+                # 3. Memory Retrieval & Profile Facts (Phase 2)
                 system_persona = load_persona()
+
+                # Fetch approved profile facts (hard rule: only approved facts enter prompt)
+                from app.memory.profile import format_facts_for_prompt, get_approved_facts
+                from app.memory.retrieval import format_memories_for_prompt, hybrid_search
+
+                approved_facts = await get_approved_facts(conn)
+                facts_context = format_facts_for_prompt(approved_facts)
+
+                # Hybrid search across past memories
+                retrieved_memories = await hybrid_search(
+                    conn, query=content, limit=5, token_budget=800
+                )
+                memories_context = format_memories_for_prompt(retrieved_memories)
+
+                system_sections = [system_persona]
+                if facts_context:
+                    system_sections.append(facts_context)
+                if memories_context:
+                    system_sections.append(memories_context)
+                full_system_prompt = "\n\n".join(system_sections)
+
                 recent_messages = await repository.list_messages(
                     conn, session_id=session_id, limit=20
                 )
 
                 prompt_messages: list[dict[str, str]] = [
-                    {"role": "system", "content": system_persona}
+                    {"role": "system", "content": full_system_prompt}
                 ]
                 for msg in recent_messages:
                     prompt_messages.append(
@@ -184,6 +205,43 @@ async def chat_websocket_endpoint(websocket: WebSocket) -> None:
                         }
                     )
                 )
+
+                # 6. Post-generation memory indexing & background fact extraction (Phase 2)
+                try:
+                    from app.memory.embeddings import EmbeddingClient
+                    from app.memory.extractor import process_and_store_candidate_facts
+                    from app.memory.summarizer import summarize_session
+
+                    embed_client = EmbeddingClient()
+                    async with db.get_connection() as conn:
+                        # Index user message vector
+                        user_vec = await embed_client.get_embedding(content)
+                        await repository.create_memory_chunk(
+                            conn,
+                            source_type="message",
+                            source_id=user_msg["id"],
+                            text=content,
+                            embedding=user_vec,
+                        )
+
+                        # Index assistant message vector if reply non-empty
+                        if full_assistant_reply.strip():
+                            asst_vec = await embed_client.get_embedding(full_assistant_reply)
+                            await repository.create_memory_chunk(
+                                conn,
+                                source_type="message",
+                                source_id=assistant_msg["id"],
+                                text=full_assistant_reply,
+                                embedding=asst_vec,
+                            )
+
+                        # Extract candidate profile facts into 'pending'
+                        await process_and_store_candidate_facts(conn, content)
+
+                        # Update session summary
+                        await summarize_session(conn, session_id)
+                except Exception as mem_err:
+                    logger.warning(f"Post-turn memory processing non-fatal error: {mem_err}")
 
             except OllamaConnectionError as conn_err:
                 await websocket.send_text(

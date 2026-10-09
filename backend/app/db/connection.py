@@ -1,5 +1,6 @@
-"""SQLite database connection manager with WAL mode support."""
+"""SQLite database connection manager with WAL mode and sqlite-vec extension support."""
 
+import logging
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -8,9 +9,11 @@ import aiosqlite
 
 from app.config import get_settings
 
+logger = logging.getLogger("aria.db")
+
 
 class Database:
-    """Manages asynchronous SQLite connections and pragmas."""
+    """Manages asynchronous SQLite connections, pragmas, and extension loading."""
 
     def __init__(self, db_path: Path | None = None) -> None:
         self._custom_db_path = db_path
@@ -23,15 +26,25 @@ class Database:
 
     @asynccontextmanager
     async def get_connection(self) -> AsyncGenerator[aiosqlite.Connection, None]:
-        """Provide an aiosqlite connection with WAL mode and row factory enabled."""
+        """Provide an aiosqlite connection with WAL mode and sqlite-vec enabled."""
         conn = await aiosqlite.connect(str(self.db_path))
         conn.row_factory = aiosqlite.Row
         try:
-            # WAL mode ensures concurrent read performance and atomic transactions
+            # Pragmas for concurrency and durability
             await conn.execute("PRAGMA journal_mode = WAL;")
             await conn.execute("PRAGMA foreign_keys = ON;")
             await conn.execute("PRAGMA busy_timeout = 5000;")
             await conn.execute("PRAGMA synchronous = NORMAL;")
+
+            # Load sqlite-vec extension for dense vector similarity
+            try:
+                import sqlite_vec
+
+                await conn.enable_load_extension(True)
+                await conn.load_extension(sqlite_vec.loadable_path())
+            except Exception as e:
+                logger.warning(f"Could not load sqlite-vec extension: {e}")
+
             yield conn
         finally:
             await conn.close()
