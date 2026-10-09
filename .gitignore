@@ -77,3 +77,7 @@ desktop.ini
 .vscode/
 *.swp
 *.swo
+
+# Local Project Notes
+memory.md
+
