@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "aria-backend"
 version = "0.1.0"
 description = "Fully private, local-first personal AI assistant backend"
-readme = "../README.md"
+readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
 authors = [
@@ -40,6 +40,7 @@ include = ["app*"]
 [tool.ruff]
 line-length = 100
 target-version = "py311"
+extend-exclude = [".venv"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "W", "UP"]
@@ -48,6 +49,7 @@ ignore = []
 [tool.black]
 line-length = 100
 target-version = ["py311"]
+extend-exclude = "\\.venv"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
