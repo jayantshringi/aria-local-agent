@@ -111,7 +111,7 @@ black --check backend/
 ## Project Status
 
 - [x] **Phase 0: Setup & Tooling** (Baseline structure, documentation, linting, tests)
-- [ ] **Phase 1: Private Chat MVP** (FastAPI, Ollama streaming, SQLite persistence, React chat UI)
+- [x] **Phase 1: Private Chat MVP** (FastAPI, Ollama streaming, SQLite persistence, React chat UI)
 - [ ] **Phase 2: Memory** (Hybrid search: sqlite-vec + FTS5, profile facts, idle summarizer)
 - [ ] **Phase 3: Multi-Device** (PWA manifest, device pairing, Tailscale setup, sync)
 - [ ] **Phase 4: Agent Tools & Safety** (Tool registry, approval gate, audit log, kill switch)
