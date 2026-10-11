@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192" width="192" height="192">
+  <defs>
+    <radialGradient id="bgGlow192" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#1E293B" />
+      <stop offset="60%" stop-color="#0F172A" />
+      <stop offset="100%" stop-color="#0B0F19" />
+    </radialGradient>
+    <linearGradient id="ringGrad192" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#06B6D4" />
+      <stop offset="50%" stop-color="#3B82F6" />
+      <stop offset="100%" stop-color="#8B5CF6" />
+    </linearGradient>
+    <linearGradient id="coreGrad192" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38BDF8" />
+      <stop offset="100%" stop-color="#6366F1" />
+    </linearGradient>
+    <filter id="neonGlow192" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="5" result="blur" />
+      <feMerge>
+        <feMergeNode in="blur" />
+        <feMergeNode in="SourceGraphic" />
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <rect width="192" height="192" rx="40" fill="url(#bgGlow192)" />
+
+  <!-- Active Ring -->
+  <circle cx="96" cy="96" r="50" fill="none" stroke="url(#ringGrad192)" stroke-width="4" filter="url(#neonGlow192)" />
+
+  <!-- Core -->
+  <g filter="url(#neonGlow192)">
+    <path d="M 96 68 L 120 82 L 120 110 L 96 124 L 72 110 L 72 82 Z" fill="url(#coreGrad192)" opacity="0.9" />
+    <circle cx="96" cy="96" r="11" fill="#FFFFFF" />
+  </g>
+</svg>

@@ -2,9 +2,15 @@
 
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from pydantic import BaseModel, Field
 
+from app.api.sync_hub import sync_hub
+from app.auth.pairing import (
+    claim_pairing_session,
+    create_pairing_session,
+    generate_pairing_qr_svg,
+)
 from app.auth.security import (
     authenticate_or_init_master_password,
     generate_device_token,
@@ -26,6 +32,25 @@ class LoginResponse(BaseModel):
     token: str
     device: dict[str, Any]
     first_time_setup: bool
+
+
+class PairCreateRequest(BaseModel):
+    ttl_seconds: int = Field(
+        default=600, ge=60, le=3600, description="Validity duration in seconds"
+    )
+
+
+class PairCreateResponse(BaseModel):
+    id: str
+    code: str
+    expires_at: str
+    ttl_seconds: int
+    qr_url: str
+
+
+class PairClaimRequest(BaseModel):
+    code: str = Field(..., min_length=4, description="Pairing code")
+    device_name: str | None = Field(default="Mobile Client", description="Name for the new device")
 
 
 @router.post("/login", response_model=LoginResponse)
@@ -85,10 +110,80 @@ async def revoke_device(
     device_id: str,
     _: dict[str, Any] = Depends(get_current_device),
 ) -> dict[str, Any]:
-    """Revoke a device token by device ID."""
+    """Revoke a device token by device ID and immediately terminate active connections."""
     db = get_database()
     async with db.get_connection() as conn:
         success = await repository.revoke_device(conn, device_id)
         if not success:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Device not found")
+
+        # Disconnect any live WebSockets associated with the revoked device
+        await sync_hub.disconnect_device(device_id)
         return {"revoked": True, "device_id": device_id}
+
+
+@router.post("/pair/create", response_model=PairCreateResponse)
+async def create_pairing_code_endpoint(
+    req: PairCreateRequest | None = None,
+    current_device: dict[str, Any] = Depends(get_current_device),
+) -> PairCreateResponse:
+    """Generate a temporary pairing code & QR link for enrolling a secondary device."""
+    ttl = req.ttl_seconds if req else 600
+    db = get_database()
+    async with db.get_connection() as conn:
+        session_info = await create_pairing_session(
+            conn,
+            created_by_device_id=current_device["id"],
+            ttl_seconds=ttl,
+        )
+        return PairCreateResponse(
+            id=session_info["id"],
+            code=session_info["code"],
+            expires_at=session_info["expires_at"],
+            ttl_seconds=session_info["ttl_seconds"],
+            qr_url=f"/api/v1/auth/pair/{session_info['code']}/qr.svg",
+        )
+
+
+@router.get("/pair/{code}/qr.svg")
+async def get_pairing_qr_svg_endpoint(code: str) -> Response:
+    """Generate and return an SVG QR code for the given pairing code."""
+    db = get_database()
+    async with db.get_connection() as conn:
+        record = await repository.get_pairing_code(conn, code.upper())
+        if not record:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Pairing code not found"
+            )
+
+    # Generate QR with URL path format `/?pair=<code>`
+    qr_svg = generate_pairing_qr_svg(f"/?pair={code.upper()}")
+    return Response(content=qr_svg, media_type="image/svg+xml")
+
+
+@router.post("/pair/claim", response_model=LoginResponse)
+async def claim_pairing_code_endpoint(req: PairClaimRequest) -> LoginResponse:
+    """Claim a valid pairing code to register a new device without exposing master password."""
+    db = get_database()
+    async with db.get_connection() as conn:
+        result = await claim_pairing_session(
+            conn,
+            code=req.code,
+            device_name=req.device_name or "Mobile Client",
+        )
+        if not result:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid or expired pairing code",
+            )
+
+        device = result["device"]
+        return LoginResponse(
+            token=result["token"],
+            device={
+                "id": device["id"],
+                "name": device["name"],
+                "created_at": device["created_at"],
+            },
+            first_time_setup=False,
+        )

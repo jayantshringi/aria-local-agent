@@ -40,8 +40,25 @@ export interface HealthStatus {
   };
 }
 
+export interface DeviceRecord {
+  id: string;
+  name: string;
+  created_at: string;
+  last_seen: string;
+  revoked: number;
+}
+
+export interface PairingSession {
+  id: string;
+  code: string;
+  expires_at: string;
+  ttl_seconds: number;
+  qr_url: string;
+}
+
 export type WsClientEvent =
   | { type: "message"; session_id?: string; content: string; model?: string }
+  | { type: "select_session"; session_id: string | null }
   | { type: "ping" }
   | { type: "auth"; token: string };
 
@@ -50,6 +67,10 @@ export type WsServerEvent =
   | { type: "message_saved"; session_id: string; message: Message }
   | { type: "token"; session_id: string; delta: string }
   | { type: "done"; session_id: string; message: Message }
+  | { type: "session_created"; session: Session }
+  | { type: "session_updated"; session: { id: string; title?: string; updated_at?: string; summary?: string | null } }
+  | { type: "session_deleted"; session_id: string }
+  | { type: "auth_revoked"; reason?: string; device_id?: string }
   | { type: "error"; session_id?: string; error: string }
   | { type: "pong" };
 

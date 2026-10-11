@@ -261,6 +261,92 @@ async def revoke_device(conn: aiosqlite.Connection, device_id: str) -> bool:
 
 
 # ---------------------------------------------------------------------------
+# Pairing Operations (Phase 3)
+# ---------------------------------------------------------------------------
+
+
+async def create_pairing_code(
+    conn: aiosqlite.Connection,
+    code: str,
+    created_by_device_id: str,
+    expires_at: str,
+) -> dict[str, Any]:
+    """Create a new temporary pairing code."""
+    pairing_id = str(uuid.uuid4())
+    now = _utc_now_iso()
+    await conn.execute(
+        """
+        INSERT INTO pairing_codes (
+            id, code, created_by_device_id, created_at,
+            expires_at, claimed_at, claimed_by_device_id
+        )
+        VALUES (?, ?, ?, ?, ?, NULL, NULL)
+        """,
+        (pairing_id, code, created_by_device_id, now, expires_at),
+    )
+    await conn.commit()
+    return {
+        "id": pairing_id,
+        "code": code,
+        "created_by_device_id": created_by_device_id,
+        "created_at": now,
+        "expires_at": expires_at,
+        "claimed_at": None,
+        "claimed_by_device_id": None,
+    }
+
+
+async def get_pairing_code(conn: aiosqlite.Connection, code: str) -> dict[str, Any] | None:
+    """Fetch a pairing code record by its code string."""
+    async with conn.execute(
+        """
+        SELECT id, code, created_by_device_id, created_at,
+               expires_at, claimed_at, claimed_by_device_id
+        FROM pairing_codes
+        WHERE code = ?
+        """,
+        (code,),
+    ) as cursor:
+        row = await cursor.fetchone()
+        if not row:
+            return None
+        return dict(row)
+
+
+async def claim_pairing_code(
+    conn: aiosqlite.Connection, code: str, claimed_by_device_id: str
+) -> bool:
+    """Mark an active, unclaimed pairing code as claimed by a new device."""
+    now = _utc_now_iso()
+    cursor = await conn.execute(
+        """
+        UPDATE pairing_codes
+        SET claimed_at = ?, claimed_by_device_id = ?
+        WHERE code = ? AND claimed_at IS NULL AND expires_at > ?
+        """,
+        (now, claimed_by_device_id, code, now),
+    )
+    await conn.commit()
+    return cursor.rowcount > 0
+
+
+async def list_active_pairing_codes(conn: aiosqlite.Connection) -> list[dict[str, Any]]:
+    """List unexpired, unclaimed pairing codes."""
+    now = _utc_now_iso()
+    async with conn.execute(
+        """
+        SELECT id, code, created_by_device_id, created_at, expires_at
+        FROM pairing_codes
+        WHERE claimed_at IS NULL AND expires_at > ?
+        ORDER BY created_at DESC
+        """,
+        (now,),
+    ) as cursor:
+        rows = await cursor.fetchall()
+        return [dict(row) for row in rows]
+
+
+# ---------------------------------------------------------------------------
 # Settings Operations
 # ---------------------------------------------------------------------------
 

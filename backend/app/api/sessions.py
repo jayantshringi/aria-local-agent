@@ -5,6 +5,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
+from app.api.sync_hub import sync_hub
 from app.auth.security import get_current_device
 from app.db import repository
 from app.db.connection import get_database
@@ -54,11 +55,13 @@ async def create_new_session(
     """Create a new session."""
     db = get_database()
     async with db.get_connection() as conn:
-        return await repository.create_session(
+        session = await repository.create_session(
             conn,
             title=req.title or "New Chat",
             device_id=current_device.get("id"),
         )
+        await sync_hub.broadcast_all({"type": "session_created", "session": session})
+        return session
 
 
 @router.get("/sessions/{session_id}")
@@ -91,6 +94,7 @@ async def update_session_details(
         )
         if not updated:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+        await sync_hub.broadcast_all({"type": "session_updated", "session": updated})
         return updated
 
 
@@ -106,6 +110,7 @@ async def delete_session_and_messages(
         deleted = await repository.delete_session(conn, session_id)
         if not deleted:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+        await sync_hub.broadcast_all({"type": "session_deleted", "session_id": session_id})
         return {"deleted": True, "session_id": session_id}
 
 

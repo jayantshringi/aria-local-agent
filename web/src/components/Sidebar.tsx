@@ -1,5 +1,18 @@
 import React from "react";
-import { MessageSquare, Plus, Trash2, Laptop, ShieldCheck, LogOut, Search, UserCheck } from "lucide-react";
+import {
+  Bell,
+  BellRing,
+  Download,
+  Laptop,
+  LogOut,
+  MessageSquare,
+  Plus,
+  Search,
+  ShieldCheck,
+  Smartphone,
+  Trash2,
+  UserCheck,
+} from "lucide-react";
 import { Device, Session } from "../types";
 
 interface SidebarProps {
@@ -11,6 +24,11 @@ interface SidebarProps {
   currentDevice: Device | null;
   onLogout: () => void;
   onOpenMemory: (tab: "about" | "search") => void;
+  onOpenDevices: () => void;
+  canInstallPwa?: boolean;
+  onInstallPwa?: () => void;
+  notificationsEnabled?: boolean;
+  onRequestNotifications?: () => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -22,6 +40,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
   currentDevice,
   onLogout,
   onOpenMemory,
+  onOpenDevices,
+  canInstallPwa,
+  onInstallPwa,
+  notificationsEnabled,
+  onRequestNotifications,
 }) => {
   return (
     <aside className="sidebar">
@@ -61,6 +84,27 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <UserCheck size={15} />
             <span>About Me</span>
           </button>
+        </div>
+
+        <div className="sidebar-device-btns">
+          <button
+            className="btn btn-secondary device-action-btn"
+            title="Manage paired devices and generate QR shortcode"
+            onClick={onOpenDevices}
+          >
+            <Smartphone size={15} />
+            <span>Devices & Sync</span>
+          </button>
+          {canInstallPwa && onInstallPwa && (
+            <button
+              className="btn btn-accent install-pwa-btn"
+              title="Install Aria as a native app on your phone or desktop"
+              onClick={onInstallPwa}
+            >
+              <Download size={15} />
+              <span>Install App</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -102,9 +146,20 @@ export const Sidebar: React.FC<SidebarProps> = ({
             {currentDevice ? currentDevice.name : "Local Client"}
           </span>
         </div>
-        <button className="btn-icon" title="Log out / Revoke device" onClick={onLogout}>
-          <LogOut size={14} />
-        </button>
+        <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+          {onRequestNotifications && (
+            <button
+              className="btn-icon"
+              title={notificationsEnabled ? "Notifications active" : "Enable background notifications"}
+              onClick={onRequestNotifications}
+            >
+              {notificationsEnabled ? <BellRing size={14} color="#06B6D4" /> : <Bell size={14} />}
+            </button>
+          )}
+          <button className="btn-icon" title="Log out / Revoke device" onClick={onLogout}>
+            <LogOut size={14} />
+          </button>
+        </div>
       </div>
     </aside>
   );

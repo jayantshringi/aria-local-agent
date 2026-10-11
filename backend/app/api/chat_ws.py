@@ -6,6 +6,7 @@ from typing import Any
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
+from app.api.sync_hub import sync_hub
 from app.auth.security import verify_device_token
 from app.db import repository
 from app.db.connection import get_database
@@ -38,8 +39,8 @@ async def _authenticate_websocket(websocket: WebSocket) -> dict[str, Any] | None
 async def chat_websocket_endpoint(websocket: WebSocket) -> None:
     """
     Streaming chat WebSocket endpoint.
-    Manages authentication, immediate message persistence, persona loading,
-    and token-by-token streaming from local Ollama.
+    Manages authentication, multi-device synchronization, immediate message persistence,
+    persona loading, and token-by-token streaming from local Ollama.
     """
     await websocket.accept()
 
@@ -64,7 +65,14 @@ async def chat_websocket_endpoint(websocket: WebSocket) -> None:
     ollama_client = OllamaClient()
     db = get_database()
 
+    # Register client connection in multi-device sync hub
+    client = await sync_hub.register(websocket, device["id"], device["name"])
+
     try:
+        # Update last seen timestamp for the device
+        async with db.get_connection() as conn:
+            await repository.update_device_last_seen(conn, device["id"])
+
         while True:
             raw_data = await websocket.receive_text()
             try:
@@ -80,6 +88,11 @@ async def chat_websocket_endpoint(websocket: WebSocket) -> None:
                 await websocket.send_text(json.dumps({"type": "pong"}))
                 continue
 
+            if event_type == "select_session":
+                selected_id = event.get("session_id")
+                sync_hub.set_client_session(client, selected_id)
+                continue
+
             if event_type != "message":
                 continue
 
@@ -91,8 +104,12 @@ async def chat_websocket_endpoint(websocket: WebSocket) -> None:
             model_override = event.get("model")
 
             async with db.get_connection() as conn:
+                # Keep last seen updated on activity
+                await repository.update_device_last_seen(conn, device["id"])
+
                 # 1. Resolve or create session
                 session = None
+                created_new_session = False
                 if session_id:
                     session = await repository.get_session(conn, session_id)
 
@@ -104,6 +121,15 @@ async def chat_websocket_endpoint(websocket: WebSocket) -> None:
                         conn, title=title, device_id=device["id"]
                     )
                     session_id = session["id"]
+                    created_new_session = True
+
+                sync_hub.set_client_session(client, session_id)
+
+                # Broadcast new session creation across other devices
+                if created_new_session:
+                    await sync_hub.broadcast_all(
+                        {"type": "session_created", "session": session}, exclude=client
+                    )
 
                 # 2. Immediately persist user message
                 user_msg = await repository.create_message(
@@ -113,16 +139,17 @@ async def chat_websocket_endpoint(websocket: WebSocket) -> None:
                     content=content,
                 )
 
-                # Send message confirmation
-                await websocket.send_text(
-                    json.dumps(
-                        {
-                            "type": "message_saved",
-                            "session_id": session_id,
-                            "message": user_msg,
-                        }
-                    )
-                )
+                # Send message confirmation to sender
+                msg_saved_payload = {
+                    "type": "message_saved",
+                    "session_id": session_id,
+                    "message": user_msg,
+                }
+                await websocket.send_text(json.dumps(msg_saved_payload))
+
+                # Real-time multi-device sync:
+                # mirror user message to all other connected devices viewing this session
+                await sync_hub.broadcast_session(session_id, msg_saved_payload, exclude=client)
 
                 # 3. Memory Retrieval & Profile Facts (Phase 2)
                 system_persona = load_persona()
@@ -171,15 +198,15 @@ async def chat_websocket_endpoint(websocket: WebSocket) -> None:
                     if chunk["type"] == "delta":
                         delta_text = chunk["content"]
                         accumulated_content.append(delta_text)
-                        await websocket.send_text(
-                            json.dumps(
-                                {
-                                    "type": "token",
-                                    "session_id": session_id,
-                                    "delta": delta_text,
-                                }
-                            )
-                        )
+                        token_payload = {
+                            "type": "token",
+                            "session_id": session_id,
+                            "delta": delta_text,
+                        }
+                        await websocket.send_text(json.dumps(token_payload))
+
+                        # Mirror streaming tokens to other devices viewing this session
+                        await sync_hub.broadcast_session(session_id, token_payload, exclude=client)
                     elif chunk["type"] == "done":
                         tokens_generated = chunk.get("tokens", 0)
 
@@ -195,15 +222,22 @@ async def chat_websocket_endpoint(websocket: WebSocket) -> None:
                         tokens=tokens_generated,
                     )
 
-                # Notify client that generation is finished
-                await websocket.send_text(
-                    json.dumps(
-                        {
-                            "type": "done",
-                            "session_id": session_id,
-                            "message": assistant_msg,
-                        }
-                    )
+                # Notify sender that generation is finished
+                done_payload = {
+                    "type": "done",
+                    "session_id": session_id,
+                    "message": assistant_msg,
+                }
+                await websocket.send_text(json.dumps(done_payload))
+
+                # Real-time multi-device sync: notify other devices that message is done
+                await sync_hub.broadcast_session(session_id, done_payload, exclude=client)
+                await sync_hub.broadcast_all(
+                    {
+                        "type": "session_updated",
+                        "session": {"id": session_id, "updated_at": assistant_msg["created_at"]},
+                    },
+                    exclude=client,
                 )
 
                 # 6. Post-generation memory indexing & background fact extraction (Phase 2)
@@ -244,36 +278,32 @@ async def chat_websocket_endpoint(websocket: WebSocket) -> None:
                     logger.warning(f"Post-turn memory processing non-fatal error: {mem_err}")
 
             except OllamaConnectionError as conn_err:
-                await websocket.send_text(
-                    json.dumps(
-                        {
-                            "type": "error",
-                            "session_id": session_id,
-                            "error": str(conn_err),
-                        }
-                    )
-                )
+                err_payload = {
+                    "type": "error",
+                    "session_id": session_id,
+                    "error": str(conn_err),
+                }
+                await websocket.send_text(json.dumps(err_payload))
+                await sync_hub.broadcast_session(session_id, err_payload, exclude=client)
             except OllamaError as ollama_err:
-                await websocket.send_text(
-                    json.dumps(
-                        {
-                            "type": "error",
-                            "session_id": session_id,
-                            "error": f"Ollama error: {ollama_err}",
-                        }
-                    )
-                )
+                err_payload = {
+                    "type": "error",
+                    "session_id": session_id,
+                    "error": f"Ollama error: {ollama_err}",
+                }
+                await websocket.send_text(json.dumps(err_payload))
+                await sync_hub.broadcast_session(session_id, err_payload, exclude=client)
             except Exception as exc:
                 logger.exception("Unexpected error in chat streaming")
-                await websocket.send_text(
-                    json.dumps(
-                        {
-                            "type": "error",
-                            "session_id": session_id,
-                            "error": f"Streaming failure: {str(exc)}",
-                        }
-                    )
-                )
+                err_payload = {
+                    "type": "error",
+                    "session_id": session_id,
+                    "error": f"Streaming failure: {str(exc)}",
+                }
+                await websocket.send_text(json.dumps(err_payload))
+                await sync_hub.broadcast_session(session_id, err_payload, exclude=client)
 
     except WebSocketDisconnect:
         logger.info(f"Client disconnected: device {device.get('id')}")
+    finally:
+        await sync_hub.unregister(client)

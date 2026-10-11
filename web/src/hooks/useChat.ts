@@ -5,9 +5,18 @@ import { api, getStoredToken } from "../api";
 interface UseChatProps {
   activeSessionId: string | null;
   onSessionCreated?: (session: Session) => void;
+  onSessionUpdated?: (session: { id: string; title?: string; updated_at?: string; summary?: string | null }) => void;
+  onSessionDeleted?: (sessionId: string) => void;
+  onAuthRevoked?: () => void;
 }
 
-export function useChat({ activeSessionId, onSessionCreated }: UseChatProps) {
+export function useChat({
+  activeSessionId,
+  onSessionCreated,
+  onSessionUpdated,
+  onSessionDeleted,
+  onAuthRevoked,
+}: UseChatProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [streamingContent, setStreamingContent] = useState<string>("");
   const [isStreaming, setIsStreaming] = useState<boolean>(false);
@@ -16,6 +25,18 @@ export function useChat({ activeSessionId, onSessionCreated }: UseChatProps) {
 
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<number | null>(null);
+
+  // Inform server when activeSessionId changes
+  useEffect(() => {
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(
+        JSON.stringify({
+          type: "select_session",
+          session_id: activeSessionId,
+        })
+      );
+    }
+  }, [activeSessionId]);
 
   // Load message history when activeSessionId changes
   useEffect(() => {
@@ -55,7 +76,11 @@ export function useChat({ activeSessionId, onSessionCreated }: UseChatProps) {
       return;
     }
 
-    if (wsRef.current && (wsRef.current.readyState === WebSocket.OPEN || wsRef.current.readyState === WebSocket.CONNECTING)) {
+    if (
+      wsRef.current &&
+      (wsRef.current.readyState === WebSocket.OPEN ||
+        wsRef.current.readyState === WebSocket.CONNECTING)
+    ) {
       return;
     }
 
@@ -69,6 +94,15 @@ export function useChat({ activeSessionId, onSessionCreated }: UseChatProps) {
     ws.onopen = () => {
       setIsConnected(true);
       setErrorMessage(null);
+      // Synchronize currently selected session upon connection
+      if (activeSessionId) {
+        ws.send(
+          JSON.stringify({
+            type: "select_session",
+            session_id: activeSessionId,
+          })
+        );
+      }
     };
 
     ws.onmessage = (event) => {
@@ -81,23 +115,74 @@ export function useChat({ activeSessionId, onSessionCreated }: UseChatProps) {
             break;
 
           case "message_saved":
-            if (data.message.role === "user") {
+            if (data.session_id === activeSessionId) {
               setMessages((prev) => {
-                if (prev.some((m) => m.id === data.message.id)) return prev;
+                if (prev.some((m) => m.id === data.message.id || (m.role === data.message.role && m.content === data.message.content))) {
+                  return prev.map((m) => (m.content === data.message.content && m.id.startsWith("temp-") ? data.message : m));
+                }
                 return [...prev, data.message];
               });
+              if (data.message.role === "user") {
+                setIsStreaming(true);
+                setStreamingContent("");
+              }
             }
             break;
 
           case "token":
-            setIsStreaming(true);
-            setStreamingContent((prev) => prev + data.delta);
+            if (data.session_id === activeSessionId) {
+              setIsStreaming(true);
+              setStreamingContent((prev) => prev + data.delta);
+            }
             break;
 
           case "done":
-            setIsStreaming(false);
-            setStreamingContent("");
-            setMessages((prev) => [...prev, data.message]);
+            if (data.session_id === activeSessionId) {
+              setIsStreaming(false);
+              setStreamingContent("");
+              setMessages((prev) => {
+                const filtered = prev.filter((m) => !m.id.startsWith("temp-"));
+                if (filtered.some((m) => m.id === data.message.id)) {
+                  return filtered;
+                }
+                return [...filtered, data.message];
+              });
+
+              // Trigger background push notification if window is minimized/hidden
+              if (
+                typeof document !== "undefined" &&
+                document.hidden &&
+                typeof Notification !== "undefined" &&
+                Notification.permission === "granted"
+              ) {
+                try {
+                  new Notification("Aria", {
+                    body: data.message.content.slice(0, 120) + (data.message.content.length > 120 ? "..." : ""),
+                    icon: "/icons/icon-192.svg",
+                  });
+                } catch {
+                  // Ignore notification error on un-supported environments
+                }
+              }
+            }
+            break;
+
+          case "session_created":
+            onSessionCreated?.(data.session);
+            break;
+
+          case "session_updated":
+            onSessionUpdated?.(data.session);
+            break;
+
+          case "session_deleted":
+            onSessionDeleted?.(data.session_id);
+            break;
+
+          case "auth_revoked":
+            setIsConnected(false);
+            setErrorMessage("Device access has been revoked by the owner.");
+            onAuthRevoked?.();
             break;
 
           case "error":
@@ -125,7 +210,7 @@ export function useChat({ activeSessionId, onSessionCreated }: UseChatProps) {
     ws.onerror = () => {
       setIsConnected(false);
     };
-  }, []);
+  }, [activeSessionId, onAuthRevoked, onSessionCreated, onSessionDeleted, onSessionUpdated]);
 
   useEffect(() => {
     connectWs();

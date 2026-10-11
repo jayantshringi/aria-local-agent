@@ -1,4 +1,13 @@
-import { Device, HealthStatus, MemorySearchResult, Message, ProfileFact, Session } from "./types";
+import {
+  Device,
+  DeviceRecord,
+  HealthStatus,
+  MemorySearchResult,
+  Message,
+  PairingSession,
+  ProfileFact,
+  Session,
+} from "./types";
 
 const TOKEN_KEY = "aria_device_token";
 const DEVICE_KEY = "aria_device_info";
@@ -133,6 +142,38 @@ export const api = {
       `/api/v1/memory/sessions/${sessionId}/summarize`,
       { method: "POST" }
     );
+  },
+
+  // Multi-Device & Pairing (Phase 3)
+  async listDevices(): Promise<DeviceRecord[]> {
+    return request<DeviceRecord[]>("/api/v1/auth/devices");
+  },
+
+  async revokeDevice(deviceId: string): Promise<{ revoked: boolean; device_id: string }> {
+    return request<{ revoked: boolean; device_id: string }>(
+      `/api/v1/auth/devices/${deviceId}/revoke`,
+      { method: "POST" }
+    );
+  },
+
+  async createPairingCode(ttlSeconds = 600): Promise<PairingSession> {
+    return request<PairingSession>("/api/v1/auth/pair/create", {
+      method: "POST",
+      body: JSON.stringify({ ttl_seconds: ttlSeconds }),
+    });
+  },
+
+  async claimPairingCode(code: string, deviceName = "Mobile Client") {
+    const res = await request<{
+      token: string;
+      device: Device;
+      first_time_setup: boolean;
+    }>("/api/v1/auth/pair/claim", {
+      method: "POST",
+      body: JSON.stringify({ code, device_name: deviceName }),
+    });
+    storeAuth(res.token, res.device);
+    return res;
   },
 };
 

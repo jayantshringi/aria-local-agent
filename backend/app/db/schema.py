@@ -91,12 +91,27 @@ CREATE TABLE IF NOT EXISTS profile_facts (
     updated_at TEXT NOT NULL
 );
 
+-- 10. Pairing Codes (Phase 3: Multi-device enrollment without master password exposure)
+CREATE TABLE IF NOT EXISTS pairing_codes (
+    id TEXT PRIMARY KEY,
+    code TEXT UNIQUE NOT NULL,
+    created_by_device_id TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    expires_at TEXT NOT NULL,
+    claimed_at TEXT,
+    claimed_by_device_id TEXT,
+    FOREIGN KEY (created_by_device_id) REFERENCES devices(id),
+    FOREIGN KEY (claimed_by_device_id) REFERENCES devices(id)
+);
+
 -- Indexes for performance
 CREATE INDEX IF NOT EXISTS idx_messages_session_id ON messages(session_id);
 CREATE INDEX IF NOT EXISTS idx_sessions_updated_at ON sessions(updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_devices_token_hash ON devices(token_hash);
 CREATE INDEX IF NOT EXISTS idx_memory_chunks_source ON memory_chunks(source_type, source_id);
 CREATE INDEX IF NOT EXISTS idx_profile_facts_status ON profile_facts(status);
+CREATE INDEX IF NOT EXISTS idx_pairing_codes_code ON pairing_codes(code);
+CREATE INDEX IF NOT EXISTS idx_pairing_codes_expires_at ON pairing_codes(expires_at);
 """
 
 
