@@ -49,6 +49,17 @@ class Settings(BaseSettings):
         default="notepad,calc,calculator,explorer,code", alias="ARIA_APPS_ALLOWLIST"
     )
 
+    # Phase 5: Voice & Proactivity
+    whisper_model: str = Field(default="base", alias="ARIA_WHISPER_MODEL")
+    whisper_device: str = Field(default="cpu", alias="ARIA_WHISPER_DEVICE")
+    whisper_compute_type: str = Field(default="int8", alias="ARIA_WHISPER_COMPUTE_TYPE")
+    piper_voice_model: str = Field(default="en_US-lessac-medium", alias="ARIA_PIPER_VOICE_MODEL")
+    piper_voice_dir: str = Field(default="", alias="ARIA_PIPER_VOICE_DIR")
+    aria_language: str = Field(default="en", alias="ARIA_LANGUAGE")
+    briefing_hour: int = Field(default=8, alias="ARIA_BRIEFING_HOUR")
+    briefing_minute: int = Field(default=0, alias="ARIA_BRIEFING_MINUTE")
+    reminder_poll_interval: int = Field(default=30, alias="ARIA_REMINDER_POLL_INTERVAL")
+
     @property
     def data_dir_path(self) -> Path:
         """Resolved absolute path to local data storage directory."""
@@ -98,6 +109,23 @@ class Settings(BaseSettings):
     def allowed_apps_list(self) -> list[str]:
         """Parsed list of allowed applications."""
         return [app.strip().lower() for app in self.apps_allowlist.split(",") if app.strip()]
+
+    @property
+    def whisper_dir_path(self) -> Path:
+        """Resolved path to local faster-whisper models directory."""
+        path = self.data_dir_path / "models" / "whisper"
+        path.mkdir(parents=True, exist_ok=True)
+        return path
+
+    @property
+    def piper_dir_path(self) -> Path:
+        """Resolved path to local Piper TTS models directory."""
+        if self.piper_voice_dir.strip():
+            path = Path(self.piper_voice_dir).expanduser().resolve()
+        else:
+            path = self.data_dir_path / "models" / "piper"
+        path.mkdir(parents=True, exist_ok=True)
+        return path
 
     def get_or_create_secret_key(self) -> str:
         """Return the secret key, generating and saving one in data_dir if not set."""

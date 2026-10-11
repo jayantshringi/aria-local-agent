@@ -3,6 +3,7 @@ import { AlertCircle, Bot, Sparkles, User } from "lucide-react";
 import { KillSwitchStatus, Message, PendingAction } from "../types";
 import { ActionApprovalBanner } from "./ActionApprovalBanner";
 import { KillSwitchButton } from "./KillSwitchButton";
+import { SpeakerButton, VoiceSettingsToggle } from "./VoiceControls";
 
 interface ChatAreaProps {
   sessionTitle: string;
@@ -18,6 +19,8 @@ interface ChatAreaProps {
   pendingActions: PendingAction[];
   onActionResolved: (actionId: string, status: string) => void;
   onOpenAuditLog: () => void;
+  ttsEnabled?: boolean;
+  onToggleTts?: (enabled: boolean) => void;
 }
 
 // Simple and safe markdown formatter for code blocks, inline code, bold, lists, and paragraphs
@@ -99,6 +102,8 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
   pendingActions,
   onActionResolved,
   onOpenAuditLog,
+  ttsEnabled,
+  onToggleTts,
 }) => {
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -115,7 +120,13 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
         <div className="chat-header-title">
           <span>{sessionTitle || "New Conversation"}</span>
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          {onToggleTts && (
+            <VoiceSettingsToggle
+              ttsEnabled={ttsEnabled ?? false}
+              onToggle={onToggleTts}
+            />
+          )}
           <KillSwitchButton
             status={killSwitchStatus}
             onStatusChange={onKillSwitchStatusChange}
@@ -169,9 +180,12 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
                 </div>
                 <div className={`message-bubble ${msg.role}`}>
                   {msg.role === "assistant" ? renderMarkdownContent(msg.content) : msg.content}
-                  <span className="message-time">
-                    {new Date(msg.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                  </span>
+                  <div className="message-meta-bar">
+                    <span className="message-time">
+                      {new Date(msg.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                    </span>
+                    {msg.role === "assistant" && <SpeakerButton text={msg.content} />}
+                  </div>
                 </div>
               </div>
             ))}

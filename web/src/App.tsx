@@ -8,7 +8,7 @@ import { MemoryModal } from "./components/MemoryModal";
 import { MessageInput } from "./components/MessageInput";
 import { Sidebar } from "./components/Sidebar";
 import { useChat } from "./hooks/useChat";
-import { Device, KillSwitchStatus, PendingAction, Session } from "./types";
+import { DailyBriefing, Device, KillSwitchStatus, Message, PendingAction, Reminder, Session } from "./types";
 
 export const App: React.FC = () => {
   const [token, setToken] = useState<string | null>(getStoredToken());
@@ -38,6 +38,18 @@ export const App: React.FC = () => {
   const [notificationsEnabled, setNotificationsEnabled] = useState<boolean>(
     typeof Notification !== "undefined" && Notification.permission === "granted"
   );
+
+  // Voice & Proactivity (Phase 5)
+  const [ttsEnabled, setTtsEnabled] = useState<boolean>(() => {
+    return localStorage.getItem("aria_tts_enabled") === "true";
+  });
+  const [activeReminder, setActiveReminder] = useState<Reminder | null>(null);
+  const [activeBriefing, setActiveBriefing] = useState<DailyBriefing | null>(null);
+
+  const handleToggleTts = (enabled: boolean) => {
+    setTtsEnabled(enabled);
+    localStorage.setItem("aria_tts_enabled", String(enabled));
+  };
 
   // Parse ?pair=<code> URL query parameter on initial load
   useEffect(() => {
@@ -173,6 +185,47 @@ export const App: React.FC = () => {
     setShowLoginModal(true);
   }, []);
 
+  const handleReminderFired = useCallback((reminder: Reminder) => {
+    setActiveReminder(reminder);
+  }, []);
+
+  const handleDailyBriefing = useCallback(
+    (briefing: DailyBriefing) => {
+      setActiveBriefing(briefing);
+      refreshSessions();
+    },
+    [refreshSessions]
+  );
+
+  const handleMessageCompleted = useCallback(
+    async (msg: Message) => {
+      if (msg.role === "assistant" && ttsEnabled && msg.content.trim()) {
+        try {
+          const audioBlob = await api.synthesizeSpeech(msg.content);
+          const audioUrl = URL.createObjectURL(audioBlob);
+          const audio = new Audio(audioUrl);
+          audio.onended = () => URL.revokeObjectURL(audioUrl);
+          await audio.play();
+        } catch (err) {
+          console.warn("Auto-TTS synthesis or playback failed:", err);
+        }
+      }
+    },
+    [ttsEnabled]
+  );
+
+  const handleTriggerBriefing = async () => {
+    try {
+      const res = await api.triggerBriefing();
+      if (res?.briefing) {
+        setActiveBriefing(res.briefing);
+        await refreshSessions();
+      }
+    } catch (err: any) {
+      setErrorMessage(err.message || "Failed to generate morning briefing");
+    }
+  };
+
   const {
     messages,
     streamingContent,
@@ -190,6 +243,9 @@ export const App: React.FC = () => {
     onPendingActionCreated: handlePendingActionCreated,
     onPendingActionResolved: handlePendingActionResolved,
     onAgentKilled: handleAgentKilled,
+    onReminderFired: handleReminderFired,
+    onDailyBriefing: handleDailyBriefing,
+    onMessageCompleted: handleMessageCompleted,
   });
 
   const handleLoginSuccess = (newToken: string, newDevice: Device) => {
@@ -263,6 +319,7 @@ export const App: React.FC = () => {
         }}
         onOpenDevices={() => setIsDeviceModalOpen(true)}
         onOpenAuditLog={() => setIsAuditModalOpen(true)}
+        onTriggerBriefing={handleTriggerBriefing}
         pendingActionsCount={pendingActions.length}
         canInstallPwa={Boolean(installPromptEvent)}
         onInstallPwa={handleInstallPwa}
@@ -270,7 +327,34 @@ export const App: React.FC = () => {
         onRequestNotifications={handleRequestNotifications}
       />
 
-      <div style={{ flex: 1, display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", height: "100%", overflow: "hidden", position: "relative" }}>
+        {activeReminder && (
+          <div className="proactive-alert-toast reminder">
+            <div className="proactive-alert-icon">⏰</div>
+            <div className="proactive-alert-body">
+              <strong>Reminder Alert</strong>
+              <p>{activeReminder.text}</p>
+              <span className="proactive-alert-meta">Due: {new Date(activeReminder.due_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
+            </div>
+            <button className="btn-dismiss" onClick={() => setActiveReminder(null)}>
+              Dismiss
+            </button>
+          </div>
+        )}
+
+        {activeBriefing && (
+          <div className="proactive-alert-toast briefing">
+            <div className="proactive-alert-icon">☀️</div>
+            <div className="proactive-alert-body">
+              <strong>Daily Morning Briefing</strong>
+              <p>{activeBriefing.content.slice(0, 120)}...</p>
+            </div>
+            <button className="btn-dismiss" onClick={() => setActiveBriefing(null)}>
+              Dismiss
+            </button>
+          </div>
+        )}
+
         <ChatArea
           sessionTitle={currentTitle}
           messages={messages}
@@ -285,6 +369,8 @@ export const App: React.FC = () => {
           pendingActions={pendingActions}
           onActionResolved={handlePendingActionResolved}
           onOpenAuditLog={() => setIsAuditModalOpen(true)}
+          ttsEnabled={ttsEnabled}
+          onToggleTts={handleToggleTts}
         />
 
         <MessageInput onSendMessage={sendMessage} disabled={isStreaming} />
@@ -292,5 +378,6 @@ export const App: React.FC = () => {
     </div>
   );
 };
+
 
 export default App;

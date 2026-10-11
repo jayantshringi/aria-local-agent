@@ -8,7 +8,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 import app.tools  # Register all agent tools
-from app.api import agent, auth, chat_ws, health, memory, sessions
+from app.api import agent, auth, chat_ws, health, memory, scheduler, sessions, voice
 from app.config import get_settings
 from app.db.connection import get_database
 from app.db.schema import init_db
@@ -37,8 +37,15 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     load_persona()
     logger.info(f"Loaded persona prompt from {settings.persona_path}")
 
+    # 3. Start background scheduler (reminders & proactive briefings)
+    from app.scheduler.engine import scheduler
+
+    scheduler.start()
+
     yield
 
+    # Teardown
+    scheduler.shutdown()
     logger.info("Shutting down aria-local-agent daemon")
 
 
@@ -70,6 +77,8 @@ def create_app() -> FastAPI:
     app.include_router(memory.router)
     app.include_router(agent.router)
     app.include_router(chat_ws.router)
+    app.include_router(voice.router)
+    app.include_router(scheduler.router)
 
     # Mount frontend static build if present
     from pathlib import Path

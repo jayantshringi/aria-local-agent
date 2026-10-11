@@ -11,7 +11,11 @@ interface UseChatProps {
   onPendingActionCreated?: (action: any) => void;
   onPendingActionResolved?: (actionId: string, status: string) => void;
   onAgentKilled?: () => void;
+  onReminderFired?: (reminder: any) => void;
+  onDailyBriefing?: (briefing: any) => void;
+  onMessageCompleted?: (message: Message) => void;
 }
+
 
 export function useChat({
   activeSessionId,
@@ -22,6 +26,9 @@ export function useChat({
   onPendingActionCreated,
   onPendingActionResolved,
   onAgentKilled,
+  onReminderFired,
+  onDailyBriefing,
+  onMessageCompleted,
 }: UseChatProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [streamingContent, setStreamingContent] = useState<string>("");
@@ -170,6 +177,38 @@ export function useChat({
                   // Ignore notification error on un-supported environments
                 }
               }
+
+              onMessageCompleted?.(data.message);
+            }
+            break;
+
+          case "reminder_fired":
+            onReminderFired?.(data.reminder);
+            if (
+              typeof Notification !== "undefined" &&
+              Notification.permission === "granted"
+            ) {
+              try {
+                new Notification("⏰ Reminder Due", {
+                  body: data.reminder.text,
+                  icon: "/icons/icon-192.svg",
+                });
+              } catch {}
+            }
+            break;
+
+          case "daily_briefing":
+            onDailyBriefing?.(data.briefing);
+            if (
+              typeof Notification !== "undefined" &&
+              Notification.permission === "granted"
+            ) {
+              try {
+                new Notification("☀️ Morning Briefing", {
+                  body: data.briefing.content.slice(0, 100),
+                  icon: "/icons/icon-192.svg",
+                });
+              } catch {}
             }
             break;
 
@@ -232,12 +271,16 @@ export function useChat({
     activeSessionId,
     onAgentKilled,
     onAuthRevoked,
+    onDailyBriefing,
+    onMessageCompleted,
     onPendingActionCreated,
     onPendingActionResolved,
+    onReminderFired,
     onSessionCreated,
     onSessionDeleted,
     onSessionUpdated,
   ]);
+
 
   useEffect(() => {
     connectWs();

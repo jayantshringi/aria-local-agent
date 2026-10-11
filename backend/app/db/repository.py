@@ -978,3 +978,74 @@ async def delete_reminder(conn: aiosqlite.Connection, reminder_id: str) -> bool:
     cursor = await conn.execute("DELETE FROM reminders WHERE id = ?", (reminder_id,))
     await conn.commit()
     return cursor.rowcount > 0
+
+
+# ---------------------------------------------------------------------------
+# Scheduler & Briefing Queries (Phase 5)
+# ---------------------------------------------------------------------------
+
+
+async def get_due_reminders(
+    conn: aiosqlite.Connection,
+    current_iso: str,
+) -> list[dict[str, Any]]:
+    """Fetch all pending reminders that are due at or before current_iso."""
+    async with conn.execute(
+        """
+        SELECT id, text, due_at, repeat_rule, status, created_at
+        FROM reminders
+        WHERE status = 'pending' AND due_at <= ?
+        ORDER BY due_at ASC
+        """,
+        (current_iso,),
+    ) as cursor:
+        rows = await cursor.fetchall()
+        return [dict(row) for row in rows]
+
+
+async def get_reminders_between(
+    conn: aiosqlite.Connection,
+    start_iso: str,
+    end_iso: str,
+    status: str | None = None,
+) -> list[dict[str, Any]]:
+    """Fetch reminders with due_at between start_iso and end_iso."""
+    if status is not None:
+        query = """
+            SELECT id, text, due_at, repeat_rule, status, created_at
+            FROM reminders
+            WHERE due_at >= ? AND due_at <= ? AND status = ?
+            ORDER BY due_at ASC
+        """
+        params = (start_iso, end_iso, status)
+    else:
+        query = """
+            SELECT id, text, due_at, repeat_rule, status, created_at
+            FROM reminders
+            WHERE due_at >= ? AND due_at <= ?
+            ORDER BY due_at ASC
+        """
+        params = (start_iso, end_iso)
+
+    async with conn.execute(query, params) as cursor:
+        rows = await cursor.fetchall()
+        return [dict(row) for row in rows]
+
+
+async def get_sessions_between(
+    conn: aiosqlite.Connection,
+    start_iso: str,
+    end_iso: str,
+) -> list[dict[str, Any]]:
+    """Fetch sessions created or updated between start_iso and end_iso."""
+    async with conn.execute(
+        """
+        SELECT id, title, created_at, updated_at, summary, device_id
+        FROM sessions
+        WHERE (created_at >= ? AND created_at <= ?) OR (updated_at >= ? AND updated_at <= ?)
+        ORDER BY updated_at DESC
+        """,
+        (start_iso, end_iso, start_iso, end_iso),
+    ) as cursor:
+        rows = await cursor.fetchall()
+        return [dict(row) for row in rows]

@@ -183,3 +183,24 @@ Once connected over Tailscale HTTPS:
 - Any message sent from your phone appears immediately on your desktop screen via the real-time WebSocket sync bus.
 - If your phone is lost or stolen, open **Devices & Sync** on your PC and click **Revoke Access** on that device. It will be disconnected immediately and its token permanently invalidated.
 
+---
+
+## 8. Voice & Proactive Scheduler Configuration
+
+### 8.1 Local Speech-to-Text (`faster-whisper`)
+- Aria uses local `faster-whisper` for offline audio transcription.
+- By default, the `base.en` (or `small`) quantized INT8 model is automatically downloaded into `~/.aria/models/whisper/` on first use.
+- The web app records 16kHz linear PCM directly using the browser's Web Audio API—no system `ffmpeg` installation is required!
+- In your browser or PWA, grant microphone permissions when prompted after pressing the microphone button.
+
+### 8.2 Local Text-to-Speech (`Piper`)
+- Aria utilizes local Piper neural voice models for ultra-fast, offline spoken responses.
+- To use Piper, place any Piper ONNX model and JSON config into `~/.aria/models/piper/` (e.g. `en_US-lessac-medium.onnx` and `en_US-lessac-medium.onnx.json`).
+- If no Piper model is installed, text-to-speech gracefully falls back to synthesized audio or browser speech synthesis without throwing errors.
+- Toggle spoken replies on/off using the speaker icon next to the theme toggle in the chat header, or click the speaker button on any individual assistant message.
+
+### 8.3 Background Reminders & Morning Briefings
+- The background `APScheduler` engine automatically polls for due reminders every 30 seconds.
+- Overdue and newly triggered reminders are broadcast across WebSocket to all connected devices with audio alerts and notification toasts.
+- A morning briefing cron runs daily at the configured briefing time (`ARIA_BRIEFING_HOUR=8`, `ARIA_BRIEFING_MINUTE=0`), generating an agenda of today's schedule, pending tasks, and yesterday's activity. You can also trigger it manually at any time via the **Morning Briefing** button in the sidebar.
+

@@ -8,6 +8,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from app.api.sync_hub import sync_hub
 from app.auth.security import verify_device_token
+from app.config import get_settings
 from app.db import repository
 from app.db.connection import get_database
 from app.llm.ollama_client import OllamaClient, OllamaConnectionError, OllamaError
@@ -233,6 +234,12 @@ async def chat_websocket_endpoint(websocket: WebSocket) -> None:
                     tools_context = "\n".join(tools_lines)
 
                 system_sections = [system_persona]
+                settings = get_settings()
+                if settings.aria_language and settings.aria_language != "en":
+                    system_sections.append(
+                        f"## Language Setting\nThe owner's configured assistant language is '{settings.aria_language}'. "
+                        "Respond primarily in this language unless the user asks otherwise."
+                    )
                 if facts_context:
                     system_sections.append(facts_context)
                 if memories_context:

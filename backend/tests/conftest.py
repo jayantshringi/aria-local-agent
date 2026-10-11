@@ -28,8 +28,14 @@ async def setup_test_environment(tmp_path: Path, monkeypatch):
     async with db.get_connection() as conn:
         await init_db(conn)
 
+    # Ensure emergency kill switch is always reset for isolated test execution
+    from app.agent.kill_switch import kill_switch
+
+    kill_switch.reset()
+
     yield
 
+    kill_switch.reset()
     get_settings.cache_clear()
 
 

@@ -87,6 +87,35 @@ class OllamaClient:
                 "error": str(e),
             }
 
+    async def chat(
+        self,
+        messages: list[dict[str, str]],
+        model: str | None = None,
+        temperature: float = 0.7,
+    ) -> str:
+        """Execute non-streaming chat completion with local Ollama model."""
+        url = f"{self.base_url}/api/chat"
+        payload = {
+            "model": model or self.chat_model,
+            "messages": messages,
+            "stream": False,
+            "options": {
+                "temperature": temperature,
+            },
+        }
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                response = await client.post(url, json=payload)
+                if response.status_code != 200:
+                    raise OllamaError(
+                        f"Ollama returned HTTP {response.status_code}: {response.text}"
+                    )
+                data = response.json()
+                return data.get("message", {}).get("content", "").strip()
+        except (httpx.ConnectError, httpx.TimeoutException, httpx.RequestError) as exc:
+            msg = f"Connection to Ollama at {self.base_url} failed."
+            raise OllamaConnectionError(msg) from exc
+
     async def stream_chat(
         self,
         messages: list[dict[str, str]],

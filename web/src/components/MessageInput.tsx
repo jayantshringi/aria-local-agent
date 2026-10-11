@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from "react";
 import { Send } from "lucide-react";
+import { VoiceInputButton } from "./VoiceControls";
 
 interface MessageInputProps {
   onSendMessage: (text: string) => void;
@@ -34,6 +35,14 @@ export const MessageInput: React.FC<MessageInputProps> = ({ onSendMessage, disab
     }
   };
 
+  const handleVoiceTranscribed = (text: string) => {
+    if (!text.trim()) return;
+    setInput((prev) => (prev ? `${prev} ${text}` : text));
+    if (textareaRef.current) {
+      textareaRef.current.focus();
+    }
+  };
+
   return (
     <div className="chat-input-wrapper">
       <div className="input-box">
@@ -47,15 +56,19 @@ export const MessageInput: React.FC<MessageInputProps> = ({ onSendMessage, disab
           disabled={disabled}
           rows={1}
         />
-        <button
-          className="send-btn"
-          onClick={handleSubmit}
-          disabled={!input.trim() || disabled}
-          title="Send message"
-        >
-          <Send size={18} />
-        </button>
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <VoiceInputButton onTranscribed={handleVoiceTranscribed} disabled={disabled} />
+          <button
+            className="send-btn"
+            onClick={handleSubmit}
+            disabled={!input.trim() || disabled}
+            title="Send message"
+          >
+            <Send size={18} />
+          </button>
+        </div>
       </div>
     </div>
   );
 };
+

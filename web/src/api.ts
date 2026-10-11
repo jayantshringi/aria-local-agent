@@ -11,6 +11,8 @@ import {
   PendingAction,
   ProfileFact,
   Session,
+  TranscribeResponse,
+  VoiceStatus,
 } from "./types";
 
 const TOKEN_KEY = "aria_device_token";
@@ -227,6 +229,79 @@ export const api = {
 
   async listAuditLogs(limit = 100): Promise<AuditLogEntry[]> {
     return request<AuditLogEntry[]>(`/api/v1/agent/audit?limit=${limit}`);
+  },
+
+  // Voice & Scheduler (Phase 5)
+  async getVoiceStatus(): Promise<VoiceStatus> {
+    return request<VoiceStatus>("/api/v1/voice/status");
+  },
+
+  async transcribeAudio(audioBlob: Blob, language?: string): Promise<TranscribeResponse> {
+    const token = getStoredToken();
+    const formData = new FormData();
+    formData.append("file", audioBlob, "recording.wav");
+
+    const url = language
+      ? `/api/v1/voice/transcribe?language=${encodeURIComponent(language)}`
+      : "/api/v1/voice/transcribe";
+
+    const headers: Record<string, string> = {};
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`;
+    }
+
+    const res = await fetch(url, {
+      method: "POST",
+      headers,
+      body: formData,
+    });
+
+    if (!res.ok) {
+      const err = await res.text();
+      throw new Error(`Transcription failed (${res.status}): ${err}`);
+    }
+
+    return res.json();
+  },
+
+  async synthesizeSpeech(text: string): Promise<Blob> {
+    const token = getStoredToken();
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+    };
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`;
+    }
+
+    const res = await fetch("/api/v1/voice/synthesize", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ text }),
+    });
+
+    if (!res.ok) {
+      const err = await res.text();
+      throw new Error(`Speech synthesis failed (${res.status}): ${err}`);
+    }
+
+    return res.blob();
+  },
+
+  async getSchedulerStatus(): Promise<any> {
+    return request<any>("/api/v1/scheduler/status");
+  },
+
+  async triggerBriefing(language?: string): Promise<any> {
+    return request<any>("/api/v1/scheduler/briefing", {
+      method: "POST",
+      body: JSON.stringify({ language, persist_message: true }),
+    });
+  },
+
+  async pollReminders(): Promise<any> {
+    return request<any>("/api/v1/scheduler/poll", {
+      method: "POST",
+    });
   },
 };
 

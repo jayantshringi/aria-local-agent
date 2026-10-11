@@ -10,6 +10,7 @@ import {
   Search,
   ShieldCheck,
   Smartphone,
+  Sun,
   Trash2,
   UserCheck,
 } from "lucide-react";
@@ -26,6 +27,7 @@ interface SidebarProps {
   onOpenMemory: (tab: "about" | "search") => void;
   onOpenDevices: () => void;
   onOpenAuditLog: () => void;
+  onTriggerBriefing?: () => void;
   pendingActionsCount?: number;
   canInstallPwa?: boolean;
   onInstallPwa?: () => void;
@@ -44,6 +46,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onOpenMemory,
   onOpenDevices,
   onOpenAuditLog,
+  onTriggerBriefing,
   pendingActionsCount = 0,
   canInstallPwa,
   onInstallPwa,
@@ -113,6 +116,19 @@ export const Sidebar: React.FC<SidebarProps> = ({
             )}
           </button>
         </div>
+        {onTriggerBriefing && (
+          <div style={{ marginTop: 6 }}>
+            <button
+              className="btn btn-secondary briefing-action-btn"
+              title="Generate proactive morning briefing"
+              onClick={onTriggerBriefing}
+              style={{ width: "100%", justifyContent: "center", display: "flex", alignItems: "center", gap: 6 }}
+            >
+              <Sun size={15} color="#fbbf24" />
+              <span>Morning Briefing</span>
+            </button>
+          </div>
+        )}
         {canInstallPwa && onInstallPwa && (
           <div style={{ marginTop: 6 }}>
             <button

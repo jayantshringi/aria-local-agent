@@ -97,7 +97,9 @@ export type WsServerEvent =
     }
   | { type: "agent_killed"; killed_actions?: any[] }
   | { type: "action_result"; result: any }
-  | { type: "tool_dispatched"; session_id?: string; tool?: string; result: any };
+  | { type: "tool_dispatched"; session_id?: string; tool?: string; result: any }
+  | { type: "reminder_fired"; reminder: Reminder }
+  | { type: "daily_briefing"; briefing: DailyBriefing };
 
 export interface ProfileFact {
   id: string;
@@ -152,6 +154,44 @@ export interface AuditLogEntry {
 export interface KillSwitchStatus {
   active: boolean;
   triggered_at: string | null;
+}
+
+// Phase 5 Voice & Scheduler Types
+export interface Reminder {
+  id: string;
+  text: string;
+  due_at: string;
+  repeat_rule?: string | null;
+  status: "pending" | "completed" | "cancelled";
+  created_at: string;
+}
+
+export interface DailyBriefing {
+  date: string;
+  timestamp: string;
+  content: string;
+  language: string;
+  reminders_count: number;
+  pending_actions_count: number;
+  yesterday_sessions_count: number;
+}
+
+export interface VoiceStatus {
+  stt_available: boolean;
+  stt_model: string;
+  tts_available: boolean;
+  tts_model: string;
+  language: string;
+}
+
+export interface TranscribeResponse {
+  text: string;
+  metadata: {
+    language: string;
+    language_probability: number;
+    duration: number;
+    segments: Array<{ start: number; end: number; text: string }>;
+  };
 }
 
 
