@@ -93,6 +93,43 @@ async def chat_websocket_endpoint(websocket: WebSocket) -> None:
                 sync_hub.set_client_session(client, selected_id)
                 continue
 
+            if event_type == "action_approve":
+                action_id = event.get("action_id")
+                from app.agent.loop import approve_and_execute_action
+
+                res = await approve_and_execute_action(action_id, resolved_by=device["name"])
+                await websocket.send_text(json.dumps({"type": "action_result", "result": res}))
+                continue
+
+            if event_type == "action_reject":
+                action_id = event.get("action_id")
+                from app.agent.loop import reject_pending_action
+
+                res = await reject_pending_action(action_id, resolved_by=device["name"])
+                await websocket.send_text(json.dumps({"type": "action_result", "result": res}))
+                continue
+
+            if event_type == "kill":
+                from app.agent.kill_switch import kill_switch
+
+                killed = await kill_switch.trigger()
+                await websocket.send_text(
+                    json.dumps({"type": "agent_killed", "killed_actions": killed})
+                )
+                continue
+
+            if event_type == "execute_tool":
+                tool_name = event.get("tool")
+                tool_args = event.get("args") or {}
+                tool_session_id = event.get("session_id")
+                from app.agent.loop import dispatch_tool_call
+
+                res = await dispatch_tool_call(
+                    tool_name, tool_args, session_id=tool_session_id, device_id=device["id"]
+                )
+                await websocket.send_text(json.dumps({"type": "tool_dispatched", "result": res}))
+                continue
+
             if event_type != "message":
                 continue
 
@@ -151,10 +188,11 @@ async def chat_websocket_endpoint(websocket: WebSocket) -> None:
                 # mirror user message to all other connected devices viewing this session
                 await sync_hub.broadcast_session(session_id, msg_saved_payload, exclude=client)
 
-                # 3. Memory Retrieval & Profile Facts (Phase 2)
+                # 3. Memory Retrieval & Profile Facts (Phase 2) + Tool Registry (Phase 4)
                 system_persona = load_persona()
 
                 # Fetch approved profile facts (hard rule: only approved facts enter prompt)
+                from app.agent.registry import tool_registry
                 from app.memory.profile import format_facts_for_prompt, get_approved_facts
                 from app.memory.retrieval import format_memories_for_prompt, hybrid_search
 
@@ -167,11 +205,40 @@ async def chat_websocket_endpoint(websocket: WebSocket) -> None:
                 )
                 memories_context = format_memories_for_prompt(retrieved_memories)
 
+                # Format available tools
+                tools_list = tool_registry.list_tools()
+                tools_context = ""
+                if tools_list:
+                    tools_lines = [
+                        "## Available Tools",
+                        "You have access to the following local tools:",
+                    ]
+                    for t in tools_list:
+                        props = t.parameters.get("properties", {}) if t.parameters else {}
+                        params_desc = ", ".join(
+                            f"{k}: {v.get('type', 'any')}" for k, v in props.items()
+                        )
+                        tools_lines.append(
+                            f"- {t.name}({params_desc}) [{t.risk_level.value} risk]: {t.description}"
+                        )
+                    tools_lines.append("")
+                    tools_lines.append(
+                        "To use a tool, output a single JSON block formatted strictly as:\n"
+                        "```tool_call\n"
+                        '{"tool": "tool_name", "args": {"param1": "value1"}}\n'
+                        "```\n"
+                        "Never execute commands or read files outside permitted folders. "
+                        "Medium and high risk tools require explicit owner approval."
+                    )
+                    tools_context = "\n".join(tools_lines)
+
                 system_sections = [system_persona]
                 if facts_context:
                     system_sections.append(facts_context)
                 if memories_context:
                     system_sections.append(memories_context)
+                if tools_context:
+                    system_sections.append(tools_context)
                 full_system_prompt = "\n\n".join(system_sections)
 
                 recent_messages = await repository.list_messages(
@@ -239,6 +306,41 @@ async def chat_websocket_endpoint(websocket: WebSocket) -> None:
                     },
                     exclude=client,
                 )
+
+                # 5b. Autonomous Tool Dispatch (Phase 4)
+                import re
+
+                tool_match = re.search(
+                    r"```tool_call\s*(\{.*?\})\s*```", full_assistant_reply, re.DOTALL
+                )
+                if tool_match:
+                    try:
+                        tool_data = json.loads(tool_match.group(1))
+                        tool_name = tool_data.get("tool")
+                        tool_args = tool_data.get("args") or {}
+                        if tool_name:
+                            from app.agent.loop import dispatch_tool_call
+
+                            tool_res = await dispatch_tool_call(
+                                tool_name,
+                                tool_args,
+                                session_id=session_id,
+                                device_id=device["id"],
+                            )
+                            tool_status_payload = {
+                                "type": "tool_dispatched",
+                                "session_id": session_id,
+                                "tool": tool_name,
+                                "result": tool_res,
+                            }
+                            await websocket.send_text(json.dumps(tool_status_payload))
+                            await sync_hub.broadcast_session(
+                                session_id, tool_status_payload, exclude=client
+                            )
+                    except Exception as tool_parse_err:
+                        logger.warning(
+                            f"Failed to parse or dispatch model tool call: {tool_parse_err}"
+                        )
 
                 # 6. Post-generation memory indexing & background fact extraction (Phase 2)
                 try:

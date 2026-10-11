@@ -97,3 +97,36 @@ async def test_websocket_chat_streaming_and_persistence(
         assert db_messages[0]["content"] == "Hello Aria, who are you?"
         assert db_messages[1]["role"] == "assistant"
         assert db_messages[1]["content"] == "I am Aria, your assistant."
+
+
+@pytest.mark.asyncio
+async def test_websocket_tool_events_and_kill_switch(
+    test_client: TestClient, initialized_db: Database, monkeypatch
+):
+    """Test execute_tool, action approval, and emergency kill over WebSocket."""
+    raw_token = generate_device_token()
+    t_hash = hash_token(raw_token)
+    async with initialized_db.get_connection() as conn:
+        await repository.register_device(conn, "Admin Device", t_hash)
+
+    with test_client.websocket_connect(f"/ws/chat?token={raw_token}") as ws:
+        init_event = ws.receive_json()
+        assert init_event["type"] == "connected"
+
+        # 1. Execute low-risk tool via websocket
+        ws.send_json(
+            {
+                "type": "execute_tool",
+                "tool": "notes.create",
+                "args": {"title": "WS Note", "content": "Created via WS"},
+            }
+        )
+        resp = ws.receive_json()
+        assert resp["type"] == "tool_dispatched"
+        assert resp["result"]["status"] == "executed"
+        assert resp["result"]["success"] is True
+
+        # 2. Trigger kill switch via websocket
+        ws.send_json({"type": "kill"})
+        kill_resp = ws.receive_json()
+        assert kill_resp["type"] == "agent_killed"

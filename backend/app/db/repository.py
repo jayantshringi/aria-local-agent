@@ -583,3 +583,398 @@ async def delete_profile_fact(conn: aiosqlite.Connection, fact_id: str) -> bool:
     cursor = await conn.execute("DELETE FROM profile_facts WHERE id = ?", (fact_id,))
     await conn.commit()
     return cursor.rowcount > 0
+
+
+# ---------------------------------------------------------------------------
+# Audit Log Operations (Phase 4)
+# ---------------------------------------------------------------------------
+
+
+async def create_audit_entry(
+    conn: aiosqlite.Connection,
+    tool: str,
+    args_json: str,
+    risk_level: str,
+    status: str,
+    approved_by: str | None = None,
+    result_json: str | None = None,
+    error: str | None = None,
+) -> dict[str, Any]:
+    """Create a new audit log record."""
+    entry_id = str(uuid.uuid4())
+    ts = _utc_now_iso()
+    await conn.execute(
+        """
+        INSERT INTO audit_log (id, ts, tool, args_json, risk_level, status, approved_by, result_json, error)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (entry_id, ts, tool, args_json, risk_level, status, approved_by, result_json, error),
+    )
+    await conn.commit()
+    return {
+        "id": entry_id,
+        "ts": ts,
+        "tool": tool,
+        "args_json": args_json,
+        "risk_level": risk_level,
+        "status": status,
+        "approved_by": approved_by,
+        "result_json": result_json,
+        "error": error,
+    }
+
+
+async def list_audit_logs(
+    conn: aiosqlite.Connection,
+    limit: int = 50,
+    offset: int = 0,
+    tool: str | None = None,
+    risk_level: str | None = None,
+) -> list[dict[str, Any]]:
+    """Fetch paginated audit log entries with optional filters."""
+    conditions = []
+    params: list[Any] = []
+    if tool is not None:
+        conditions.append("tool = ?")
+        params.append(tool)
+    if risk_level is not None:
+        conditions.append("risk_level = ?")
+        params.append(risk_level)
+
+    where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+    params.extend([limit, offset])
+
+    async with conn.execute(
+        f"""
+        SELECT id, ts, tool, args_json, risk_level, status, approved_by, result_json, error
+        FROM audit_log
+        {where_clause}
+        ORDER BY ts DESC
+        LIMIT ? OFFSET ?
+        """,
+        params,
+    ) as cursor:
+        rows = await cursor.fetchall()
+        return [dict(row) for row in rows]
+
+
+async def get_audit_entry(conn: aiosqlite.Connection, entry_id: str) -> dict[str, Any] | None:
+    """Fetch a single audit log entry by ID."""
+    async with conn.execute(
+        """
+        SELECT id, ts, tool, args_json, risk_level, status, approved_by, result_json, error
+        FROM audit_log WHERE id = ?
+        """,
+        (entry_id,),
+    ) as cursor:
+        row = await cursor.fetchone()
+        if not row:
+            return None
+        return dict(row)
+
+
+# ---------------------------------------------------------------------------
+# Pending Actions Operations (Phase 4)
+# ---------------------------------------------------------------------------
+
+
+async def create_pending_action(
+    conn: aiosqlite.Connection,
+    tool: str,
+    args_json: str,
+    risk_level: str,
+    session_id: str | None = None,
+) -> dict[str, Any]:
+    """Register a new action requiring approval."""
+    action_id = str(uuid.uuid4())
+    now = _utc_now_iso()
+    await conn.execute(
+        """
+        INSERT INTO pending_actions (id, session_id, tool, args_json, risk_level, created_at, status, resolved_at, resolved_by)
+        VALUES (?, ?, ?, ?, ?, ?, 'pending', NULL, NULL)
+        """,
+        (action_id, session_id, tool, args_json, risk_level, now),
+    )
+    await conn.commit()
+    return {
+        "id": action_id,
+        "session_id": session_id,
+        "tool": tool,
+        "args_json": args_json,
+        "risk_level": risk_level,
+        "created_at": now,
+        "status": "pending",
+        "resolved_at": None,
+        "resolved_by": None,
+    }
+
+
+async def get_pending_action(conn: aiosqlite.Connection, action_id: str) -> dict[str, Any] | None:
+    """Retrieve pending action by ID."""
+    async with conn.execute(
+        """
+        SELECT id, session_id, tool, args_json, risk_level, created_at, status, resolved_at, resolved_by
+        FROM pending_actions WHERE id = ?
+        """,
+        (action_id,),
+    ) as cursor:
+        row = await cursor.fetchone()
+        if not row:
+            return None
+        return dict(row)
+
+
+async def list_pending_actions(
+    conn: aiosqlite.Connection,
+    status: str = "pending",
+    limit: int = 50,
+) -> list[dict[str, Any]]:
+    """List pending actions by status."""
+    async with conn.execute(
+        """
+        SELECT id, session_id, tool, args_json, risk_level, created_at, status, resolved_at, resolved_by
+        FROM pending_actions
+        WHERE status = ?
+        ORDER BY created_at DESC
+        LIMIT ?
+        """,
+        (status, limit),
+    ) as cursor:
+        rows = await cursor.fetchall()
+        return [dict(row) for row in rows]
+
+
+async def update_pending_action_status(
+    conn: aiosqlite.Connection,
+    action_id: str,
+    status: str,
+    resolved_by: str | None = None,
+) -> dict[str, Any] | None:
+    """Resolve an action (approved, rejected, or killed)."""
+    now = _utc_now_iso()
+    await conn.execute(
+        """
+        UPDATE pending_actions
+        SET status = ?, resolved_at = ?, resolved_by = ?
+        WHERE id = ?
+        """,
+        (status, now, resolved_by, action_id),
+    )
+    await conn.commit()
+    return await get_pending_action(conn, action_id)
+
+
+async def cancel_all_pending_actions(
+    conn: aiosqlite.Connection,
+    resolved_by: str = "kill_switch",
+) -> int:
+    """Cancel all active pending actions during emergency kill switch."""
+    now = _utc_now_iso()
+    cursor = await conn.execute(
+        """
+        UPDATE pending_actions
+        SET status = 'killed', resolved_at = ?, resolved_by = ?
+        WHERE status = 'pending'
+        """,
+        (now, resolved_by),
+    )
+    await conn.commit()
+    return cursor.rowcount
+
+
+# ---------------------------------------------------------------------------
+# Notes Operations (Phase 4)
+# ---------------------------------------------------------------------------
+
+
+async def create_note(
+    conn: aiosqlite.Connection,
+    title: str,
+    content: str,
+    tags: str = "",
+) -> dict[str, Any]:
+    """Create a new user note."""
+    note_id = str(uuid.uuid4())
+    now = _utc_now_iso()
+    await conn.execute(
+        """
+        INSERT INTO notes (id, title, content, tags, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        (note_id, title.strip(), content.strip(), tags.strip(), now, now),
+    )
+    await conn.commit()
+    return {
+        "id": note_id,
+        "title": title.strip(),
+        "content": content.strip(),
+        "tags": tags.strip(),
+        "created_at": now,
+        "updated_at": now,
+    }
+
+
+async def get_note(conn: aiosqlite.Connection, note_id: str) -> dict[str, Any] | None:
+    """Fetch note by ID."""
+    async with conn.execute(
+        "SELECT id, title, content, tags, created_at, updated_at FROM notes WHERE id = ?",
+        (note_id,),
+    ) as cursor:
+        row = await cursor.fetchone()
+        if not row:
+            return None
+        return dict(row)
+
+
+async def list_notes(
+    conn: aiosqlite.Connection, limit: int = 50, offset: int = 0
+) -> list[dict[str, Any]]:
+    """List notes sorted by recent update."""
+    async with conn.execute(
+        """
+        SELECT id, title, content, tags, created_at, updated_at
+        FROM notes
+        ORDER BY updated_at DESC
+        LIMIT ? OFFSET ?
+        """,
+        (limit, offset),
+    ) as cursor:
+        rows = await cursor.fetchall()
+        return [dict(row) for row in rows]
+
+
+async def search_notes(
+    conn: aiosqlite.Connection, query: str, limit: int = 10
+) -> list[dict[str, Any]]:
+    """Search notes by title, content, or tags."""
+    pattern = f"%{query.strip()}%"
+    async with conn.execute(
+        """
+        SELECT id, title, content, tags, created_at, updated_at
+        FROM notes
+        WHERE title LIKE ? OR content LIKE ? OR tags LIKE ?
+        ORDER BY updated_at DESC
+        LIMIT ?
+        """,
+        (pattern, pattern, pattern, limit),
+    ) as cursor:
+        rows = await cursor.fetchall()
+        return [dict(row) for row in rows]
+
+
+async def update_note(
+    conn: aiosqlite.Connection,
+    note_id: str,
+    title: str | None = None,
+    content: str | None = None,
+    tags: str | None = None,
+) -> dict[str, Any] | None:
+    """Update title, content, or tags of an existing note."""
+    now = _utc_now_iso()
+    updates = ["updated_at = ?"]
+    params: list[Any] = [now]
+    if title is not None:
+        updates.append("title = ?")
+        params.append(title.strip())
+    if content is not None:
+        updates.append("content = ?")
+        params.append(content.strip())
+    if tags is not None:
+        updates.append("tags = ?")
+        params.append(tags.strip())
+
+    params.append(note_id)
+    await conn.execute(
+        f"UPDATE notes SET {', '.join(updates)} WHERE id = ?",
+        params,
+    )
+    await conn.commit()
+    return await get_note(conn, note_id)
+
+
+async def delete_note(conn: aiosqlite.Connection, note_id: str) -> bool:
+    """Permanently delete note."""
+    cursor = await conn.execute("DELETE FROM notes WHERE id = ?", (note_id,))
+    await conn.commit()
+    return cursor.rowcount > 0
+
+
+# ---------------------------------------------------------------------------
+# Reminders Operations (Phase 4)
+# ---------------------------------------------------------------------------
+
+
+async def create_reminder(
+    conn: aiosqlite.Connection,
+    text: str,
+    due_at: str,
+    repeat_rule: str | None = None,
+) -> dict[str, Any]:
+    """Create a new reminder."""
+    reminder_id = str(uuid.uuid4())
+    now = _utc_now_iso()
+    await conn.execute(
+        """
+        INSERT INTO reminders (id, text, due_at, repeat_rule, status, created_at)
+        VALUES (?, ?, ?, ?, 'pending', ?)
+        """,
+        (reminder_id, text.strip(), due_at.strip(), repeat_rule, now),
+    )
+    await conn.commit()
+    return {
+        "id": reminder_id,
+        "text": text.strip(),
+        "due_at": due_at.strip(),
+        "repeat_rule": repeat_rule,
+        "status": "pending",
+        "created_at": now,
+    }
+
+
+async def get_reminder(conn: aiosqlite.Connection, reminder_id: str) -> dict[str, Any] | None:
+    """Get reminder by ID."""
+    async with conn.execute(
+        "SELECT id, text, due_at, repeat_rule, status, created_at FROM reminders WHERE id = ?",
+        (reminder_id,),
+    ) as cursor:
+        row = await cursor.fetchone()
+        if not row:
+            return None
+        return dict(row)
+
+
+async def list_reminders(
+    conn: aiosqlite.Connection,
+    status: str | None = None,
+    limit: int = 50,
+) -> list[dict[str, Any]]:
+    """List reminders, optionally filtered by status ('pending', 'completed', 'cancelled')."""
+    if status is not None:
+        query = "SELECT id, text, due_at, repeat_rule, status, created_at FROM reminders WHERE status = ? ORDER BY due_at ASC LIMIT ?"
+        params: tuple[Any, ...] = (status, limit)
+    else:
+        query = "SELECT id, text, due_at, repeat_rule, status, created_at FROM reminders ORDER BY due_at ASC LIMIT ?"
+        params = (limit,)
+
+    async with conn.execute(query, params) as cursor:
+        rows = await cursor.fetchall()
+        return [dict(row) for row in rows]
+
+
+async def update_reminder_status(
+    conn: aiosqlite.Connection, reminder_id: str, status: str
+) -> dict[str, Any] | None:
+    """Update reminder status ('pending', 'completed', 'cancelled')."""
+    await conn.execute(
+        "UPDATE reminders SET status = ? WHERE id = ?",
+        (status, reminder_id),
+    )
+    await conn.commit()
+    return await get_reminder(conn, reminder_id)
+
+
+async def delete_reminder(conn: aiosqlite.Connection, reminder_id: str) -> bool:
+    """Delete a reminder."""
+    cursor = await conn.execute("DELETE FROM reminders WHERE id = ?", (reminder_id,))
+    await conn.commit()
+    return cursor.rowcount > 0

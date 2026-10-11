@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { api, clearStoredAuth, getStoredDevice, getStoredToken, storeAuth } from "./api";
+import { AuditLogModal } from "./components/AuditLogModal";
 import { ChatArea } from "./components/ChatArea";
 import { DeviceModal } from "./components/DeviceModal";
 import { LoginModal } from "./components/LoginModal";
@@ -7,7 +8,7 @@ import { MemoryModal } from "./components/MemoryModal";
 import { MessageInput } from "./components/MessageInput";
 import { Sidebar } from "./components/Sidebar";
 import { useChat } from "./hooks/useChat";
-import { Device, Session } from "./types";
+import { Device, KillSwitchStatus, PendingAction, Session } from "./types";
 
 export const App: React.FC = () => {
   const [token, setToken] = useState<string | null>(getStoredToken());
@@ -18,6 +19,14 @@ export const App: React.FC = () => {
   const [isMemoryModalOpen, setIsMemoryModalOpen] = useState<boolean>(false);
   const [memoryInitialTab, setMemoryInitialTab] = useState<"about" | "search">("about");
   const [isDeviceModalOpen, setIsDeviceModalOpen] = useState<boolean>(false);
+  const [isAuditModalOpen, setIsAuditModalOpen] = useState<boolean>(false);
+
+  // Agent Safety & Pending Actions (Phase 4)
+  const [killSwitchStatus, setKillSwitchStatus] = useState<KillSwitchStatus>({
+    active: false,
+    triggered_at: null,
+  });
+  const [pendingActions, setPendingActions] = useState<PendingAction[]>([]);
 
   const [sessions, setSessions] = useState<Session[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
@@ -85,11 +94,27 @@ export const App: React.FC = () => {
     }
   }, [token, activeSessionId]);
 
+  // Refresh agent status & pending actions
+  const refreshAgentState = useCallback(async () => {
+    if (!token) return;
+    try {
+      const [kStatus, pActions] = await Promise.all([
+        api.getKillSwitchStatus().catch(() => ({ active: false, triggered_at: null })),
+        api.listPendingActions().catch(() => []),
+      ]);
+      setKillSwitchStatus(kStatus);
+      setPendingActions(pActions);
+    } catch (err) {
+      console.error("Failed to load agent state", err);
+    }
+  }, [token]);
+
   useEffect(() => {
     if (token) {
       refreshSessions();
+      refreshAgentState();
     }
-  }, [token, refreshSessions]);
+  }, [token, refreshSessions, refreshAgentState]);
 
   // Real-time multi-device sync callbacks
   const handleSessionCreated = useCallback((newSession: Session) => {
@@ -111,12 +136,40 @@ export const App: React.FC = () => {
     setActiveSessionId((current) => (current === deletedId ? null : current));
   }, []);
 
+  const handlePendingActionCreated = useCallback((action: any) => {
+    setPendingActions((prev) => {
+      if (prev.some((a) => a.id === action.id)) return prev;
+      return [
+        {
+          id: action.id,
+          tool: action.tool,
+          args_json: typeof action.args === "string" ? action.args : JSON.stringify(action.args || {}),
+          risk_level: action.risk_level,
+          session_id: action.session_id,
+          status: "pending",
+          created_at: action.created_at || new Date().toISOString(),
+        },
+        ...prev,
+      ];
+    });
+  }, []);
+
+  const handlePendingActionResolved = useCallback((actionId: string) => {
+    setPendingActions((prev) => prev.filter((a) => a.id !== actionId));
+  }, []);
+
+  const handleAgentKilled = useCallback(() => {
+    setKillSwitchStatus({ active: true, triggered_at: new Date().toISOString() });
+    setPendingActions([]);
+  }, []);
+
   const handleLogout = useCallback(() => {
     clearStoredAuth();
     setToken(null);
     setDevice(null);
     setSessions([]);
     setActiveSessionId(null);
+    setPendingActions([]);
     setShowLoginModal(true);
   }, []);
 
@@ -134,6 +187,9 @@ export const App: React.FC = () => {
     onSessionUpdated: handleSessionUpdated,
     onSessionDeleted: handleSessionDeleted,
     onAuthRevoked: handleLogout,
+    onPendingActionCreated: handlePendingActionCreated,
+    onPendingActionResolved: handlePendingActionResolved,
+    onAgentKilled: handleAgentKilled,
   });
 
   const handleLoginSuccess = (newToken: string, newDevice: Device) => {
@@ -188,6 +244,11 @@ export const App: React.FC = () => {
         onClose={() => setIsDeviceModalOpen(false)}
       />
 
+      <AuditLogModal
+        isOpen={isAuditModalOpen}
+        onClose={() => setIsAuditModalOpen(false)}
+      />
+
       <Sidebar
         sessions={sessions}
         activeSessionId={activeSessionId}
@@ -201,6 +262,8 @@ export const App: React.FC = () => {
           setIsMemoryModalOpen(true);
         }}
         onOpenDevices={() => setIsDeviceModalOpen(true)}
+        onOpenAuditLog={() => setIsAuditModalOpen(true)}
+        pendingActionsCount={pendingActions.length}
         canInstallPwa={Boolean(installPromptEvent)}
         onInstallPwa={handleInstallPwa}
         notificationsEnabled={notificationsEnabled}
@@ -216,6 +279,12 @@ export const App: React.FC = () => {
           isConnected={isConnected}
           errorMessage={errorMessage}
           onClearError={() => setErrorMessage(null)}
+          killSwitchStatus={killSwitchStatus}
+          onKillSwitchStatusChange={setKillSwitchStatus}
+          onKilled={handleAgentKilled}
+          pendingActions={pendingActions}
+          onActionResolved={handlePendingActionResolved}
+          onOpenAuditLog={() => setIsAuditModalOpen(true)}
         />
 
         <MessageInput onSendMessage={sendMessage} disabled={isStreaming} />

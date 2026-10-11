@@ -25,6 +25,8 @@ interface SidebarProps {
   onLogout: () => void;
   onOpenMemory: (tab: "about" | "search") => void;
   onOpenDevices: () => void;
+  onOpenAuditLog: () => void;
+  pendingActionsCount?: number;
   canInstallPwa?: boolean;
   onInstallPwa?: () => void;
   notificationsEnabled?: boolean;
@@ -41,6 +43,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onLogout,
   onOpenMemory,
   onOpenDevices,
+  onOpenAuditLog,
+  pendingActionsCount = 0,
   canInstallPwa,
   onInstallPwa,
   notificationsEnabled,
@@ -95,7 +99,22 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <Smartphone size={15} />
             <span>Devices & Sync</span>
           </button>
-          {canInstallPwa && onInstallPwa && (
+          <button
+            className="btn btn-secondary audit-action-btn"
+            title="Inspect Agent Security & Audit Log"
+            onClick={onOpenAuditLog}
+          >
+            <ShieldCheck size={15} />
+            <span>Audit Log</span>
+            {pendingActionsCount > 0 && (
+              <span className="sidebar-pending-badge" title={`${pendingActionsCount} action(s) pending approval`}>
+                {pendingActionsCount}
+              </span>
+            )}
+          </button>
+        </div>
+        {canInstallPwa && onInstallPwa && (
+          <div style={{ marginTop: 6 }}>
             <button
               className="btn btn-accent install-pwa-btn"
               title="Install Aria as a native app on your phone or desktop"
@@ -104,8 +123,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <Download size={15} />
               <span>Install App</span>
             </button>
-          )}
-        </div>
+          </div>
+        )}
       </div>
 
       <div className="session-list">

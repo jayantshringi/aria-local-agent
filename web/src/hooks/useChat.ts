@@ -8,6 +8,9 @@ interface UseChatProps {
   onSessionUpdated?: (session: { id: string; title?: string; updated_at?: string; summary?: string | null }) => void;
   onSessionDeleted?: (sessionId: string) => void;
   onAuthRevoked?: () => void;
+  onPendingActionCreated?: (action: any) => void;
+  onPendingActionResolved?: (actionId: string, status: string) => void;
+  onAgentKilled?: () => void;
 }
 
 export function useChat({
@@ -16,6 +19,9 @@ export function useChat({
   onSessionUpdated,
   onSessionDeleted,
   onAuthRevoked,
+  onPendingActionCreated,
+  onPendingActionResolved,
+  onAgentKilled,
 }: UseChatProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [streamingContent, setStreamingContent] = useState<string>("");
@@ -185,6 +191,18 @@ export function useChat({
             onAuthRevoked?.();
             break;
 
+          case "pending_action_created":
+            onPendingActionCreated?.(data.action);
+            break;
+
+          case "pending_action_resolved":
+            onPendingActionResolved?.(data.action_id, data.status);
+            break;
+
+          case "agent_killed":
+            onAgentKilled?.();
+            break;
+
           case "error":
             setIsStreaming(false);
             setStreamingContent("");
@@ -210,7 +228,16 @@ export function useChat({
     ws.onerror = () => {
       setIsConnected(false);
     };
-  }, [activeSessionId, onAuthRevoked, onSessionCreated, onSessionDeleted, onSessionUpdated]);
+  }, [
+    activeSessionId,
+    onAgentKilled,
+    onAuthRevoked,
+    onPendingActionCreated,
+    onPendingActionResolved,
+    onSessionCreated,
+    onSessionDeleted,
+    onSessionUpdated,
+  ]);
 
   useEffect(() => {
     connectWs();
@@ -223,6 +250,25 @@ export function useChat({
       }
     };
   }, [connectWs]);
+
+  // Action / Kill helpers over WebSocket
+  const sendApproveAction = useCallback((actionId: string) => {
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: "action_approve", action_id: actionId }));
+    }
+  }, []);
+
+  const sendRejectAction = useCallback((actionId: string) => {
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: "action_reject", action_id: actionId }));
+    }
+  }, []);
+
+  const sendKill = useCallback(() => {
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: "kill" }));
+    }
+  }, []);
 
   // Send a message
   const sendMessage = useCallback(
@@ -285,5 +331,8 @@ export function useChat({
     errorMessage,
     sendMessage,
     setErrorMessage,
+    sendApproveAction,
+    sendRejectAction,
+    sendKill,
   };
 }

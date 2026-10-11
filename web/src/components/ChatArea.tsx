@@ -1,6 +1,8 @@
 import React, { useEffect, useRef } from "react";
-import { Bot, User, Sparkles, AlertCircle } from "lucide-react";
-import { Message } from "../types";
+import { AlertCircle, Bot, Sparkles, User } from "lucide-react";
+import { KillSwitchStatus, Message, PendingAction } from "../types";
+import { ActionApprovalBanner } from "./ActionApprovalBanner";
+import { KillSwitchButton } from "./KillSwitchButton";
 
 interface ChatAreaProps {
   sessionTitle: string;
@@ -10,6 +12,12 @@ interface ChatAreaProps {
   isConnected: boolean;
   errorMessage: string | null;
   onClearError: () => void;
+  killSwitchStatus: KillSwitchStatus;
+  onKillSwitchStatusChange: (status: KillSwitchStatus) => void;
+  onKilled?: () => void;
+  pendingActions: PendingAction[];
+  onActionResolved: (actionId: string, status: string) => void;
+  onOpenAuditLog: () => void;
 }
 
 // Simple and safe markdown formatter for code blocks, inline code, bold, lists, and paragraphs
@@ -85,6 +93,12 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
   isConnected,
   errorMessage,
   onClearError,
+  killSwitchStatus,
+  onKillSwitchStatusChange,
+  onKilled,
+  pendingActions,
+  onActionResolved,
+  onOpenAuditLog,
 }) => {
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -102,12 +116,24 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
           <span>{sessionTitle || "New Conversation"}</span>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <KillSwitchButton
+            status={killSwitchStatus}
+            onStatusChange={onKillSwitchStatusChange}
+            onKilled={onKilled}
+          />
           <div className="status-pill">
             <span className={`status-dot ${isConnected ? "online" : "offline"}`} />
             <span>{isConnected ? "Connected" : "Disconnected"}</span>
           </div>
         </div>
       </header>
+
+      {/* Floating or Top Action Approval Banner */}
+      <ActionApprovalBanner
+        pendingActions={pendingActions}
+        onActionResolved={onActionResolved}
+        onOpenAuditLog={onOpenAuditLog}
+      />
 
       {errorMessage && (
         <div style={{ padding: "12px 24px", maxWidth: 860, margin: "10px auto 0", width: "100%" }}>

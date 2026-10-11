@@ -60,7 +60,11 @@ export type WsClientEvent =
   | { type: "message"; session_id?: string; content: string; model?: string }
   | { type: "select_session"; session_id: string | null }
   | { type: "ping" }
-  | { type: "auth"; token: string };
+  | { type: "auth"; token: string }
+  | { type: "action_approve"; action_id: string }
+  | { type: "action_reject"; action_id: string }
+  | { type: "kill" }
+  | { type: "execute_tool"; tool: string; args?: Record<string, any>; session_id?: string };
 
 export type WsServerEvent =
   | { type: "connected"; device: { id: string; name: string } }
@@ -72,7 +76,28 @@ export type WsServerEvent =
   | { type: "session_deleted"; session_id: string }
   | { type: "auth_revoked"; reason?: string; device_id?: string }
   | { type: "error"; session_id?: string; error: string }
-  | { type: "pong" };
+  | { type: "pong" }
+  | {
+      type: "pending_action_created";
+      action: {
+        id: string;
+        session_id?: string | null;
+        tool: string;
+        args: Record<string, any>;
+        risk_level: "low" | "medium" | "high";
+        created_at: string;
+      };
+    }
+  | {
+      type: "pending_action_resolved";
+      action_id: string;
+      status: string;
+      resolved_by?: string;
+      result?: any;
+    }
+  | { type: "agent_killed"; killed_actions?: any[] }
+  | { type: "action_result"; result: any }
+  | { type: "tool_dispatched"; session_id?: string; tool?: string; result: any };
 
 export interface ProfileFact {
   id: string;
@@ -91,4 +116,42 @@ export interface MemorySearchResult {
   score: number;
   created_at?: string;
 }
+
+// Phase 4 Agent & Safety Types
+export interface AgentTool {
+  name: string;
+  description: string;
+  risk_level: "low" | "medium" | "high";
+  parameters: Record<string, any>;
+}
+
+export interface PendingAction {
+  id: string;
+  tool: string;
+  args_json: string;
+  risk_level: "low" | "medium" | "high";
+  session_id?: string | null;
+  status: "pending" | "approved" | "rejected" | "killed" | "failed";
+  created_at: string;
+  resolved_at?: string | null;
+  resolved_by?: string | null;
+}
+
+export interface AuditLogEntry {
+  id: string;
+  ts: string;
+  tool: string;
+  args_json: string;
+  risk_level: string;
+  status: string;
+  approved_by?: string | null;
+  result_json?: string | null;
+  error?: string | null;
+}
+
+export interface KillSwitchStatus {
+  active: boolean;
+  triggered_at: string | null;
+}
+
 

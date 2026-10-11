@@ -114,7 +114,7 @@ black --check backend/
 - [x] **Phase 1: Private Chat MVP** (FastAPI, Ollama streaming, SQLite persistence, React chat UI)
 - [x] **Phase 2: Memory** (Hybrid search: sqlite-vec + FTS5, profile facts, idle summarizer)
 - [x] **Phase 3: Multi-Device** (PWA manifest, service worker, device pairing QR/shortcodes, Tailscale setup, real-time WebSocket sync)
-- [ ] **Phase 4: Agent Tools & Safety** (Tool registry, approval gate, audit log, kill switch)
+- [x] **Phase 4: Agent Tools & Safety** (12 sandboxed tools, approval gate, directory traversal protection, audit log, kill switch)
 - [ ] **Phase 5: Voice & Proactivity** (faster-whisper, Piper, wake word, APScheduler briefing)
 - [ ] **Phase 6: Hardening & Polish** (Encryption at rest, export/delete, Tauri desktop)
 

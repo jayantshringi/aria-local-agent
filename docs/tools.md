@@ -1,71 +1,112 @@
-# Agent Tool Specifications
+# Agent Tool Specifications & Safety Architecture
 
 ## 1. Tool Registry Architecture
 
-Each tool in `aria-local-agent` is implemented as an isolated, self-contained Python class inheriting from a base `BaseTool` interface in `backend/app/agent/base_tool.py`.
+Each tool in `aria-local-agent` is implemented as an isolated, self-contained Python module inheriting from the `BaseTool` abstract base class (`backend/app/agent/base_tool.py`).
 
 ### Tool Contract
-Every tool provides:
+Every tool defines:
 1. `name: str` - Unique dot-namespaced identifier (e.g., `files.read`).
-2. `description: str` - Concise description for the LLM tool selector.
-3. `parameters: dict` - Standard JSON Schema defining expected inputs.
-4. `risk_level: RiskLevel` - Tier: `LOW`, `MEDIUM`, or `HIGH`.
-5. `execute(args: dict, context: ExecutionContext) -> ToolResult` - Async execution function.
+2. `description: str` - Concise description for LLM prompting and user display.
+3. `risk_level: RiskLevel` - Tier: `LOW`, `MEDIUM`, or `HIGH`.
+4. `parameters: dict[str, Any]` - JSON Schema defining input parameters and types.
+5. `execute(args: dict, context: ExecutionContext) -> ToolResult` - Safe async execution method.
 
 ---
 
-## 2. Initial Tool Catalog
+## 2. Risk Tiers & Approval State Machine
 
-### 2.1 Notes
+| Risk Tier | Policy | Default Execution Flow |
+|---|---|---|
+| **LOW** | Safe, read-only or low-impact creation | Auto-executed immediately. Logged to `audit_log`. |
+| **MEDIUM** | State mutations, file writes, opening apps | Intercepted into `pending_actions`. Broadcast via WebSocket. Requires explicit owner approval before execution. |
+| **HIGH** | File deletion, shell execution | Strict approval required. Cannot be bypassed. Logged with full audit trail. |
+
+### Pending Actions Flow
+1. Model or client proposes an action via `dispatch_tool_call()`.
+2. Low-risk tools execute automatically and wrap their output with `<untrusted_tool_data>`.
+3. Medium- and high-risk tools insert a row in `pending_actions` (`status = 'pending'`) and broadcast a `pending_action_created` event to all connected devices.
+4. The owner approves (`POST /api/v1/agent/actions/{id}/approve`) or rejects (`POST /api/v1/agent/actions/{id}/reject`).
+5. On approval, the tool executes with an approved `ExecutionContext` and emits `pending_action_resolved`.
+6. On rejection, the status is marked `'rejected'` and logged to `audit_log`.
+
+---
+
+## 3. Tool Catalog
+
+### 3.1 Notes
+- **`notes.create` (Risk: LOW)**
+  - *Description:* Create a local markdown note in SQLite.
+  - *Parameters:* `title` (str, required), `content` (str, required), `tags` (array of str).
 - **`notes.search` (Risk: LOW)**
-  - *Description:* Searches stored notes by keyword or tag.
-  - *Parameters:* `query` (string), `limit` (integer, default 5).
-- **`notes.create` (Risk: MEDIUM)**
-  - *Description:* Creates a new note in the user's local notes repository.
-  - *Parameters:* `title` (string), `content` (string), `tags` (array of strings).
+  - *Description:* Search local notes by title, content, or tag.
+  - *Parameters:* `query` (str, required), `limit` (int, default 5).
 
-### 2.2 Filesystem
+### 3.2 Filesystem
 - **`files.search` (Risk: LOW)**
-  - *Description:* Searches for filenames matching a pattern inside whitelisted folders.
-  - *Parameters:* `pattern` (string), `root_dir` (optional string within whitelist).
+  - *Description:* Search for files inside whitelisted directories using glob patterns.
+  - *Parameters:* `query` (str, required), `path` (str, optional relative or absolute whitelisted directory).
 - **`files.read` (Risk: LOW)**
-  - *Description:* Reads the content of a text or markdown file inside whitelisted folders.
-  - *Parameters:* `path` (string).
-- **`files.write` (Risk: MEDIUM)**
-  - *Description:* Writes or appends text to a file inside whitelisted folders.
-  - *Parameters:* `path` (string), `content` (string), `mode` ("overwrite" or "append").
-- **`files.move` (Risk: MEDIUM)**
-  - *Description:* Renames or moves a file within whitelisted folders.
-  - *Parameters:* `source_path` (string), `target_path` (string).
-- **`files.delete` (Risk: HIGH)**
-  - *Description:* Safely moves a file to the system trash bin (never permanent deletion).
-  - *Parameters:* `path` (string).
+  - *Description:* Read text or markdown contents up to `max_bytes` within whitelisted directories.
+  - *Parameters:* `path` (str, required), `max_bytes` (int, default 65536).
+- **`files.write` (Risk: MEDIUM, Requires Approval)**
+  - *Description:* Create, overwrite, or append content to a file inside whitelisted folders.
+  - *Parameters:* `path` (str, required), `content` (str, required), `mode` ("overwrite" | "append", default "overwrite").
+- **`files.move` (Risk: MEDIUM, Requires Approval)**
+  - *Description:* Move or rename files within whitelisted folders.
+  - *Parameters:* `source` (str, required), `destination` (str, required).
+- **`files.delete` (Risk: HIGH, Requires Approval)**
+  - *Description:* Soft-delete file into `.trash/<filename>_<timestamp>`. Permanent unrecoverable deletion is forbidden.
+  - *Parameters:* `path` (str, required).
 
-### 2.3 Reminders
+### 3.3 Reminders
 - **`reminders.create` (Risk: LOW)**
-  - *Description:* Creates a scheduled reminder.
-  - *Parameters:* `text` (string), `due_at` (ISO 8601 timestamp), `repeat_rule` (optional string).
+  - *Description:* Schedule a reminder with text, due date/time (ISO 8601), and optional repeat rule.
+  - *Parameters:* `text` (str, required), `due_at` (str, required), `repeat_rule` (str, optional).
 - **`reminders.list` (Risk: LOW)**
-  - *Description:* Lists upcoming or active reminders.
-  - *Parameters:* `status` ("pending" | "completed" | "all").
+  - *Description:* List reminders filtered by status (`pending`, `completed`, `all`).
+  - *Parameters:* `status` (str, default "pending"), `limit` (int, default 20).
 
-### 2.4 Applications
-- **`apps.open` (Risk: MEDIUM)**
-  - *Description:* Opens an application from the owner's configured allowlist.
-  - *Parameters:* `app_name` (string).
+### 3.4 Applications
+- **`apps.open` (Risk: MEDIUM, Requires Approval)**
+  - *Description:* Launch an application explicitly listed in `ARIA_APPS_ALLOWLIST`. Executed without shell interpolation.
+  - *Parameters:* `app_name` (str, required).
 
-### 2.5 Web Search (Optional / Disabled by Default)
-- **`web.search` (Risk: MEDIUM)**
-  - *Description:* Queries a local SearXNG instance or local offline index.
-  - *Parameters:* `query` (string), `max_results` (integer).
+### 3.5 Web Search
+- **`web.search` (Risk: MEDIUM, Requires Approval, Disabled by Default)**
+  - *Description:* Query local self-hosted SearXNG instance (`http://localhost:8080`).
+  - *Parameters:* `query` (str, required), `limit` (int, default 5).
 
-### 2.6 Shell Execution (Disabled by Default)
-- **`shell.run` (Risk: HIGH)**
-  - *Description:* Executes an approved command from a strict allow-list. Always requires explicit approval.
-  - *Parameters:* `command` (string), `args` (array of strings).
+### 3.6 Shell Execution
+- **`shell.run` (Risk: HIGH, Requires Approval, Disabled by Default)**
+  - *Description:* Execute a command strictly allowlisted in `ARIA_SHELL_ALLOWLIST`. Runs in sandboxed subprocess with timeouts.
+  - *Parameters:* `command` (str, required), `args` (array of str).
 
 ---
 
-## 3. Whitelist Management
+## 4. Safety Controls & Prompt Injection Defense
 
-Filesystem tools are strictly restricted to paths defined in `ARIA_FOLDER_WHITELIST` in settings. Any attempt to traverse (`../`) or access directories outside the whitelist immediately fails and creates a security alert in `audit_log`.
+### 4.1 Folder Whitelist Sandboxing
+- All file operations are checked via `verify_path_allowed()` in `backend/app/agent/safety.py`.
+- Path traversal sequences (`../`, `..\\`) and symlink escapes outside `ARIA_FOLDER_WHITELIST` raise `SecurityViolationError` immediately and are logged.
+
+### 4.2 Reversible Deletions
+- In adherence to `AGENTS.md` Section 6, `files.delete` never deletes files permanently. Files are timestamped and moved into `.trash/` inside the primary whitelisted root.
+
+### 4.3 Prompt Injection Defense
+- Untrusted tool outputs (file contents, notes, search queries) are wrapped in `<untrusted_tool_data>` delimiters via `wrap_untrusted_data()`.
+- Nested escape sequences (e.g. `</untrusted_tool_data>`) inside tool output are sanitized to prevent jailbreaks and instruction override attempts.
+
+---
+
+## 5. Emergency Kill Switch
+
+- **Trigger API:** `POST /api/v1/agent/kill`
+- **Reset API:** `POST /api/v1/agent/kill/reset`
+- **Status API:** `GET /api/v1/agent/kill/status`
+- **Behavior:**
+  1. Sets global kill switch state to `active = True`.
+  2. Cancels all in-flight asyncio agent tasks immediately.
+  3. Updates all `pending` actions in SQLite to `status = 'killed'`.
+  4. Broadcasts `agent_killed` WebSocket event across all connected thin clients.
+  5. Intercepts and rejects any subsequent tool execution requests until explicitly reset.

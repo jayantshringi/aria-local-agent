@@ -1,10 +1,14 @@
 import {
+  AgentTool,
+  AuditLogEntry,
   Device,
   DeviceRecord,
   HealthStatus,
+  KillSwitchStatus,
   MemorySearchResult,
   Message,
   PairingSession,
+  PendingAction,
   ProfileFact,
   Session,
 } from "./types";
@@ -175,5 +179,55 @@ export const api = {
     storeAuth(res.token, res.device);
     return res;
   },
+
+  // Agent Tools & Safety (Phase 4)
+  async listTools(): Promise<AgentTool[]> {
+    const res = await request<{ count: number; tools: AgentTool[] }>("/api/v1/agent/tools");
+    return res.tools;
+  },
+
+  async executeTool(tool: string, args: Record<string, any> = {}, sessionId?: string): Promise<any> {
+    return request<any>("/api/v1/agent/execute", {
+      method: "POST",
+      body: JSON.stringify({ tool, args, session_id: sessionId }),
+    });
+  },
+
+  async listPendingActions(status = "pending"): Promise<PendingAction[]> {
+    return request<PendingAction[]>(`/api/v1/agent/actions/pending?status=${encodeURIComponent(status)}`);
+  },
+
+  async approveAction(actionId: string): Promise<any> {
+    return request<any>(`/api/v1/agent/actions/${actionId}/approve`, {
+      method: "POST",
+    });
+  },
+
+  async rejectAction(actionId: string): Promise<any> {
+    return request<any>(`/api/v1/agent/actions/${actionId}/reject`, {
+      method: "POST",
+    });
+  },
+
+  async triggerKillSwitch(): Promise<{ killed_actions: PendingAction[]; active: boolean }> {
+    return request<{ killed_actions: PendingAction[]; active: boolean }>("/api/v1/agent/kill", {
+      method: "POST",
+    });
+  },
+
+  async resetKillSwitch(): Promise<{ active: boolean; message: string }> {
+    return request<{ active: boolean; message: string }>("/api/v1/agent/kill/reset", {
+      method: "POST",
+    });
+  },
+
+  async getKillSwitchStatus(): Promise<KillSwitchStatus> {
+    return request<KillSwitchStatus>("/api/v1/agent/kill/status");
+  },
+
+  async listAuditLogs(limit = 100): Promise<AuditLogEntry[]> {
+    return request<AuditLogEntry[]>(`/api/v1/agent/audit?limit=${limit}`);
+  },
 };
+
 

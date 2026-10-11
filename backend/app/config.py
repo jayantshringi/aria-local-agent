@@ -37,6 +37,18 @@ class Settings(BaseSettings):
         alias="CORS_ORIGINS",
     )
 
+    # Phase 4: Agent Tool & Safety Controls
+    folder_whitelist: str = Field(default="", alias="ARIA_FOLDER_WHITELIST")
+    web_search_enabled: bool = Field(default=False, alias="ARIA_WEB_SEARCH_ENABLED")
+    searxng_url: str = Field(default="http://127.0.0.1:8080", alias="SEARXNG_URL")
+    shell_enabled: bool = Field(default=False, alias="ARIA_SHELL_ENABLED")
+    shell_allowlist: str = Field(
+        default="python,git,dir,ls,echo,date", alias="ARIA_SHELL_ALLOWLIST"
+    )
+    apps_allowlist: str = Field(
+        default="notepad,calc,calculator,explorer,code", alias="ARIA_APPS_ALLOWLIST"
+    )
+
     @property
     def data_dir_path(self) -> Path:
         """Resolved absolute path to local data storage directory."""
@@ -58,6 +70,34 @@ class Settings(BaseSettings):
     def cors_origins_list(self) -> list[str]:
         """Parsed list of allowed CORS origins."""
         return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
+
+    @property
+    def whitelisted_directories(self) -> list[Path]:
+        """Parsed and resolved list of whitelisted directories for filesystem tools."""
+        paths: list[Path] = []
+        if self.folder_whitelist.strip():
+            for p in self.folder_whitelist.split(","):
+                clean = p.strip()
+                if clean:
+                    resolved = Path(clean).expanduser().resolve()
+                    resolved.mkdir(parents=True, exist_ok=True)
+                    paths.append(resolved)
+        else:
+            # Default to a dedicated sandbox subfolder inside ~/.aria/
+            sandbox = self.data_dir_path / "sandbox"
+            sandbox.mkdir(parents=True, exist_ok=True)
+            paths.append(sandbox)
+        return paths
+
+    @property
+    def allowed_shell_commands_list(self) -> list[str]:
+        """Parsed list of allowed shell commands."""
+        return [cmd.strip().lower() for cmd in self.shell_allowlist.split(",") if cmd.strip()]
+
+    @property
+    def allowed_apps_list(self) -> list[str]:
+        """Parsed list of allowed applications."""
+        return [app.strip().lower() for app in self.apps_allowlist.split(",") if app.strip()]
 
     def get_or_create_secret_key(self) -> str:
         """Return the secret key, generating and saving one in data_dir if not set."""

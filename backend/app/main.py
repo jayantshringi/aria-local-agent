@@ -7,7 +7,8 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import auth, chat_ws, health, memory, sessions
+import app.tools  # Register all agent tools
+from app.api import agent, auth, chat_ws, health, memory, sessions
 from app.config import get_settings
 from app.db.connection import get_database
 from app.db.schema import init_db
@@ -67,6 +68,7 @@ def create_app() -> FastAPI:
     app.include_router(auth.router)
     app.include_router(sessions.router)
     app.include_router(memory.router)
+    app.include_router(agent.router)
     app.include_router(chat_ws.router)
 
     # Mount frontend static build if present

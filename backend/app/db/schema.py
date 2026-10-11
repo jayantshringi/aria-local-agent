@@ -104,6 +104,52 @@ CREATE TABLE IF NOT EXISTS pairing_codes (
     FOREIGN KEY (claimed_by_device_id) REFERENCES devices(id)
 );
 
+-- 11. Audit Log (Phase 4: Agent safety, tool execution audit trail)
+CREATE TABLE IF NOT EXISTS audit_log (
+    id TEXT PRIMARY KEY,
+    ts TEXT NOT NULL,
+    tool TEXT NOT NULL,
+    args_json TEXT NOT NULL,
+    risk_level TEXT NOT NULL,
+    status TEXT NOT NULL,
+    approved_by TEXT,
+    result_json TEXT,
+    error TEXT
+);
+
+-- 12. Pending Actions (Phase 4: Approval queue for medium & high risk actions)
+CREATE TABLE IF NOT EXISTS pending_actions (
+    id TEXT PRIMARY KEY,
+    session_id TEXT,
+    tool TEXT NOT NULL,
+    args_json TEXT NOT NULL,
+    risk_level TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending',
+    resolved_at TEXT,
+    resolved_by TEXT
+);
+
+-- 13. Notes Table (Phase 4: Personal notes tool)
+CREATE TABLE IF NOT EXISTS notes (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    content TEXT NOT NULL,
+    tags TEXT DEFAULT '',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+-- 14. Reminders Table (Phase 4: Personal reminders tool)
+CREATE TABLE IF NOT EXISTS reminders (
+    id TEXT PRIMARY KEY,
+    text TEXT NOT NULL,
+    due_at TEXT NOT NULL,
+    repeat_rule TEXT,
+    status TEXT NOT NULL DEFAULT 'pending',
+    created_at TEXT NOT NULL
+);
+
 -- Indexes for performance
 CREATE INDEX IF NOT EXISTS idx_messages_session_id ON messages(session_id);
 CREATE INDEX IF NOT EXISTS idx_sessions_updated_at ON sessions(updated_at DESC);
@@ -112,6 +158,11 @@ CREATE INDEX IF NOT EXISTS idx_memory_chunks_source ON memory_chunks(source_type
 CREATE INDEX IF NOT EXISTS idx_profile_facts_status ON profile_facts(status);
 CREATE INDEX IF NOT EXISTS idx_pairing_codes_code ON pairing_codes(code);
 CREATE INDEX IF NOT EXISTS idx_pairing_codes_expires_at ON pairing_codes(expires_at);
+CREATE INDEX IF NOT EXISTS idx_audit_log_ts ON audit_log(ts DESC);
+CREATE INDEX IF NOT EXISTS idx_audit_log_tool ON audit_log(tool);
+CREATE INDEX IF NOT EXISTS idx_pending_actions_status ON pending_actions(status);
+CREATE INDEX IF NOT EXISTS idx_notes_updated_at ON notes(updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_reminders_due_at ON reminders(due_at ASC);
 """
 
 
