@@ -8,6 +8,7 @@ import {
   MessageSquare,
   Plus,
   Search,
+  Settings,
   ShieldCheck,
   Smartphone,
   Sun,
@@ -33,6 +34,7 @@ interface SidebarProps {
   onInstallPwa?: () => void;
   notificationsEnabled?: boolean;
   onRequestNotifications?: () => void;
+  onOpenSettings?: () => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -52,6 +54,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onInstallPwa,
   notificationsEnabled,
   onRequestNotifications,
+  onOpenSettings,
 }) => {
   return (
     <aside className="sidebar">
@@ -189,6 +192,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
               onClick={onRequestNotifications}
             >
               {notificationsEnabled ? <BellRing size={14} color="#06B6D4" /> : <Bell size={14} />}
+            </button>
+          )}
+          {onOpenSettings && (
+            <button
+              className="btn-icon"
+              title="System Settings, Models & Maintenance"
+              onClick={onOpenSettings}
+            >
+              <Settings size={14} />
             </button>
           )}
           <button className="btn-icon" title="Log out / Revoke device" onClick={onLogout}>

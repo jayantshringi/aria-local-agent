@@ -194,4 +194,61 @@ export interface TranscribeResponse {
   };
 }
 
+// Phase 6 System & Telemetry Types
+export interface SystemTelemetry {
+  cpu: {
+    percent: number;
+    cores: number;
+  };
+  memory: {
+    total_bytes: number;
+    used_bytes: number;
+    available_bytes: number;
+    percent: number;
+  };
+  disk: {
+    total_bytes: number;
+    used_bytes: number;
+    free_bytes: number;
+    percent: number;
+    path: string;
+  };
+  platform: {
+    os: string;
+    release: string;
+    arch: string;
+    python: string;
+  };
+  uptime_seconds: number;
+  embedding_cache: {
+    size: number;
+    capacity: number;
+    hits: number;
+    misses: number;
+    hit_rate: number;
+  };
+}
+
+export interface OllamaModelInfo {
+  name: string;
+  size: number;
+  modified_at: string;
+  parameter_size: string;
+  quantization_level: string;
+  family: string;
+}
+
+export interface SystemModelsResponse {
+  active_chat_model: string;
+  configured_embed_model: string;
+  ollama_online: boolean;
+  models: OllamaModelInfo[];
+}
+
+export interface SystemPluginsResponse {
+  plugins_dir: string;
+  registered_tools_count: number;
+  tools: AgentTool[];
+}
+
 

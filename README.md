@@ -115,8 +115,25 @@ black --check backend/
 - [x] **Phase 2: Memory** (Hybrid search: sqlite-vec + FTS5, profile facts, idle summarizer)
 - [x] **Phase 3: Multi-Device** (PWA manifest, service worker, device pairing QR/shortcodes, Tailscale setup, real-time WebSocket sync)
 - [x] **Phase 4: Agent Tools & Safety** (12 sandboxed tools, approval gate, directory traversal protection, audit log, kill switch)
-- [ ] **Phase 5: Voice & Proactivity** (faster-whisper, Piper, wake word, APScheduler briefing)
-- [ ] **Phase 6: Hardening & Polish** (Encryption at rest, export/delete, Tauri desktop)
+- [x] **Phase 5: Voice & Proactivity** (faster-whisper STT, Piper TTS, APScheduler reminders & morning briefings)
+- [x] **Phase 6: Hardening & Polish** (AES-256-GCM encrypted backup/recovery, data export & wipe, model switcher, system telemetry, LRU embedding cache, context window pruning, dynamic tool plugins, Tauri desktop wrapper)
+
+---
+
+## Encrypted Backup & Restore CLI
+
+Create crash-consistent, authenticated encrypted backups of your entire Aria knowledge base:
+
+```bash
+# Create encrypted backup
+python scripts/backup.py backup --output my_backup.aria-bak
+
+# Verify backup integrity
+python scripts/backup.py verify -i my_backup.aria-bak
+
+# Restore backup archive
+python scripts/backup.py restore -i my_backup.aria-bak --force
+```
 
 ---
 

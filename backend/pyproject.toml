@@ -26,6 +26,8 @@ dependencies = [
     "faster-whisper>=1.0.0",
     "piper-tts>=1.2.0",
     "soundfile>=0.12.0",
+    "cryptography>=42.0.0",
+    "psutil>=5.9.0",
 ]
 
 [project.optional-dependencies]
@@ -58,4 +60,4 @@ extend-exclude = "\\.venv"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
-pythonpath = ["."]
+pythonpath = [".", ".."]

@@ -6,6 +6,7 @@ import { DeviceModal } from "./components/DeviceModal";
 import { LoginModal } from "./components/LoginModal";
 import { MemoryModal } from "./components/MemoryModal";
 import { MessageInput } from "./components/MessageInput";
+import { SettingsModal } from "./components/SettingsModal";
 import { Sidebar } from "./components/Sidebar";
 import { useChat } from "./hooks/useChat";
 import { DailyBriefing, Device, KillSwitchStatus, Message, PendingAction, Reminder, Session } from "./types";
@@ -20,6 +21,7 @@ export const App: React.FC = () => {
   const [memoryInitialTab, setMemoryInitialTab] = useState<"about" | "search">("about");
   const [isDeviceModalOpen, setIsDeviceModalOpen] = useState<boolean>(false);
   const [isAuditModalOpen, setIsAuditModalOpen] = useState<boolean>(false);
+  const [isSettingsModalOpen, setIsSettingsModalOpen] = useState<boolean>(false);
 
   // Agent Safety & Pending Actions (Phase 4)
   const [killSwitchStatus, setKillSwitchStatus] = useState<KillSwitchStatus>({
@@ -305,6 +307,15 @@ export const App: React.FC = () => {
         onClose={() => setIsAuditModalOpen(false)}
       />
 
+      <SettingsModal
+        isOpen={isSettingsModalOpen}
+        onClose={() => setIsSettingsModalOpen(false)}
+        onDataWiped={() => {
+          refreshSessions();
+          setActiveSessionId(null);
+        }}
+      />
+
       <Sidebar
         sessions={sessions}
         activeSessionId={activeSessionId}
@@ -319,6 +330,7 @@ export const App: React.FC = () => {
         }}
         onOpenDevices={() => setIsDeviceModalOpen(true)}
         onOpenAuditLog={() => setIsAuditModalOpen(true)}
+        onOpenSettings={() => setIsSettingsModalOpen(true)}
         onTriggerBriefing={handleTriggerBriefing}
         pendingActionsCount={pendingActions.length}
         canInstallPwa={Boolean(installPromptEvent)}

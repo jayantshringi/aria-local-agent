@@ -49,31 +49,44 @@ class EmbeddingClient:
 
     async def get_embedding(self, text: str) -> list[float]:
         """
-        Embed a text string using nomic-embed-text.
+        Embed a text string using nomic-embed-text with LRU caching.
         Falls back gracefully to deterministic vector if Ollama is unreachable.
         """
         clean_text = text.strip()
         if not clean_text:
             return [0.0] * EMBEDDING_DIM
 
+        from app.memory.cache import get_embedding_cache
+
+        cache = get_embedding_cache()
+        cached_vec = cache.get(clean_text, self.model)
+        if cached_vec is not None:
+            return cached_vec
+
         # Try Ollama /api/embeddings or /api/embed
         url = f"{self.base_url}/api/embeddings"
         payload = {"model": self.model, "prompt": clean_text}
 
+        vec: list[float] = []
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
                 res = await client.post(url, json=payload)
                 if res.status_code == 200:
                     data = res.json()
-                    vec = data.get("embedding", [])
-                    if len(vec) == EMBEDDING_DIM:
-                        return vec
-                    elif len(vec) > 0:
+                    raw_vec = data.get("embedding", [])
+                    if len(raw_vec) == EMBEDDING_DIM:
+                        vec = raw_vec
+                    elif len(raw_vec) > 0:
                         # Pad or trim if model dimension differs
-                        if len(vec) < EMBEDDING_DIM:
-                            return vec + [0.0] * (EMBEDDING_DIM - len(vec))
-                        return vec[:EMBEDDING_DIM]
+                        if len(raw_vec) < EMBEDDING_DIM:
+                            vec = raw_vec + [0.0] * (EMBEDDING_DIM - len(raw_vec))
+                        else:
+                            vec = raw_vec[:EMBEDDING_DIM]
         except Exception as e:
             logger.debug(f"Ollama embed call failed, using deterministic fallback: {e}")
 
-        return _deterministic_offline_embedding(clean_text, EMBEDDING_DIM)
+        if not vec:
+            vec = _deterministic_offline_embedding(clean_text, EMBEDDING_DIM)
+
+        cache.put(clean_text, self.model, vec)
+        return vec

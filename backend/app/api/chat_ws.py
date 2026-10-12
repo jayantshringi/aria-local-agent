@@ -145,6 +145,12 @@ async def chat_websocket_endpoint(websocket: WebSocket) -> None:
                 # Keep last seen updated on activity
                 await repository.update_device_last_seen(conn, device["id"])
 
+                # Resolve active model from SQLite settings (Phase 6 model switcher)
+                from app.system.models import get_active_chat_model
+
+                active_configured_model = await get_active_chat_model(conn)
+                effective_model = model_override or active_configured_model
+
                 # 1. Resolve or create session
                 session = None
                 created_new_session = False
@@ -249,13 +255,22 @@ async def chat_websocket_endpoint(websocket: WebSocket) -> None:
                 full_system_prompt = "\n\n".join(system_sections)
 
                 recent_messages = await repository.list_messages(
-                    conn, session_id=session_id, limit=20
+                    conn, session_id=session_id, limit=30
+                )
+
+                # Context-window management (Phase 6): prune messages to prevent context overflow
+                from app.llm.context import ContextWindowManager, estimate_tokens
+
+                context_mgr = ContextWindowManager(max_context_tokens=settings.max_context_tokens)
+                sys_tokens = estimate_tokens(full_system_prompt)
+                pruned_messages = context_mgr.prune_messages(
+                    recent_messages, system_overhead=sys_tokens
                 )
 
                 prompt_messages: list[dict[str, str]] = [
                     {"role": "system", "content": full_system_prompt}
                 ]
-                for msg in recent_messages:
+                for msg in pruned_messages:
                     prompt_messages.append(
                         {
                             "role": msg["role"],
@@ -268,7 +283,9 @@ async def chat_websocket_endpoint(websocket: WebSocket) -> None:
             tokens_generated = 0
 
             try:
-                async for chunk in ollama_client.stream_chat(prompt_messages, model=model_override):
+                async for chunk in ollama_client.stream_chat(
+                    prompt_messages, model=effective_model
+                ):
                     if chunk["type"] == "delta":
                         delta_text = chunk["content"]
                         accumulated_content.append(delta_text)

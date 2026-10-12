@@ -60,6 +60,11 @@ class Settings(BaseSettings):
     briefing_minute: int = Field(default=0, alias="ARIA_BRIEFING_MINUTE")
     reminder_poll_interval: int = Field(default=30, alias="ARIA_REMINDER_POLL_INTERVAL")
 
+    # Phase 6: Hardening, Polish & Extensibility
+    plugins_dir: str = Field(default="", alias="ARIA_PLUGINS_DIR")
+    embedding_cache_size: int = Field(default=2048, alias="ARIA_EMBEDDING_CACHE_SIZE")
+    max_context_tokens: int = Field(default=4096, alias="ARIA_MAX_CONTEXT_TOKENS")
+
     @property
     def data_dir_path(self) -> Path:
         """Resolved absolute path to local data storage directory."""
@@ -124,6 +129,16 @@ class Settings(BaseSettings):
             path = Path(self.piper_voice_dir).expanduser().resolve()
         else:
             path = self.data_dir_path / "models" / "piper"
+        path.mkdir(parents=True, exist_ok=True)
+        return path
+
+    @property
+    def plugins_dir_path(self) -> Path:
+        """Resolved path to custom tools plugins directory."""
+        if self.plugins_dir.strip():
+            path = Path(self.plugins_dir).expanduser().resolve()
+        else:
+            path = self.data_dir_path / "plugins"
         path.mkdir(parents=True, exist_ok=True)
         return path
 

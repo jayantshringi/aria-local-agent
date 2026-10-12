@@ -11,6 +11,9 @@ import {
   PendingAction,
   ProfileFact,
   Session,
+  SystemModelsResponse,
+  SystemPluginsResponse,
+  SystemTelemetry,
   TranscribeResponse,
   VoiceStatus,
 } from "./types";
@@ -300,6 +303,56 @@ export const api = {
 
   async pollReminders(): Promise<any> {
     return request<any>("/api/v1/scheduler/poll", {
+      method: "POST",
+    });
+  },
+
+  // Phase 6 System Administration & Maintenance
+  async getSystemResources(): Promise<SystemTelemetry> {
+    return request<SystemTelemetry>("/api/v1/system/resources");
+  },
+
+  async getSystemModels(): Promise<SystemModelsResponse> {
+    return request<SystemModelsResponse>("/api/v1/system/models");
+  },
+
+  async selectSystemModel(model: string): Promise<{ success: boolean; active_chat_model: string }> {
+    return request<{ success: boolean; active_chat_model: string }>("/api/v1/system/models/select", {
+      method: "POST",
+      body: JSON.stringify({ model }),
+    });
+  },
+
+  async exportSystemDataJson(): Promise<any> {
+    return request<any>("/api/v1/system/export/json");
+  },
+
+  async exportSystemDataZip(): Promise<Blob> {
+    const token = getStoredToken();
+    const headers: Record<string, string> = {};
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`;
+    }
+    const res = await fetch("/api/v1/system/export?format=zip", { headers });
+    if (!res.ok) {
+      throw new Error(`Export failed: ${res.statusText}`);
+    }
+    return res.blob();
+  },
+
+  async wipeSystemData(confirmation: string): Promise<any> {
+    return request<any>("/api/v1/system/wipe", {
+      method: "POST",
+      body: JSON.stringify({ confirmation }),
+    });
+  },
+
+  async getSystemPlugins(): Promise<SystemPluginsResponse> {
+    return request<SystemPluginsResponse>("/api/v1/system/plugins");
+  },
+
+  async rescanSystemPlugins(): Promise<{ success: boolean; newly_loaded_plugins: string[] }> {
+    return request<{ success: boolean; newly_loaded_plugins: string[] }>("/api/v1/system/plugins/rescan", {
       method: "POST",
     });
   },
