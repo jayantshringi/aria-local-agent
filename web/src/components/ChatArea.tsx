@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from "react";
-import { AlertCircle, Bot, Sparkles, User } from "lucide-react";
+import { AlertCircle, Bot, Menu, Sparkles, User } from "lucide-react";
 import { KillSwitchStatus, Message, PendingAction } from "../types";
 import { ActionApprovalBanner } from "./ActionApprovalBanner";
 import { KillSwitchButton } from "./KillSwitchButton";
@@ -21,6 +21,7 @@ interface ChatAreaProps {
   onOpenAuditLog: () => void;
   ttsEnabled?: boolean;
   onToggleTts?: (enabled: boolean) => void;
+  onToggleSidebar?: () => void;
 }
 
 // Simple and safe markdown formatter for code blocks, inline code, bold, lists, and paragraphs
@@ -104,6 +105,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
   onOpenAuditLog,
   ttsEnabled,
   onToggleTts,
+  onToggleSidebar,
 }) => {
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -117,8 +119,20 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
   return (
     <div className="chat-main">
       <header className="chat-header">
-        <div className="chat-header-title">
-          <span>{sessionTitle || "New Conversation"}</span>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
+          {onToggleSidebar && (
+            <button
+              className="btn-icon mobile-menu-btn"
+              onClick={onToggleSidebar}
+              title="Open menu"
+              aria-label="Open menu"
+            >
+              <Menu size={20} />
+            </button>
+          )}
+          <div className="chat-header-title">
+            <span>{sessionTitle || "New Conversation"}</span>
+          </div>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           {onToggleTts && (

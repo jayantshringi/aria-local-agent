@@ -14,6 +14,7 @@ import {
   Sun,
   Trash2,
   UserCheck,
+  X,
 } from "lucide-react";
 import { Device, Session } from "../types";
 
@@ -35,6 +36,8 @@ interface SidebarProps {
   notificationsEnabled?: boolean;
   onRequestNotifications?: () => void;
   onOpenSettings?: () => void;
+  isMobileOpen?: boolean;
+  onCloseMobile?: () => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -55,9 +58,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
   notificationsEnabled,
   onRequestNotifications,
   onOpenSettings,
+  isMobileOpen = false,
+  onCloseMobile,
 }) => {
+  const handleAction = (callback: () => void) => {
+    callback();
+    onCloseMobile?.();
+  };
+
   return (
-    <aside className="sidebar">
+    <aside className={`sidebar ${isMobileOpen ? "mobile-open" : ""}`}>
       <div className="sidebar-header">
         <div className="brand">
           <div className="brand-logo">
@@ -70,10 +80,20 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </div>
           </div>
         </div>
+        {onCloseMobile && (
+          <button
+            className="btn-icon sidebar-close-btn"
+            onClick={onCloseMobile}
+            title="Close sidebar"
+            aria-label="Close sidebar"
+          >
+            <X size={18} />
+          </button>
+        )}
       </div>
 
       <div className="sidebar-actions">
-        <button className="btn btn-primary new-chat-btn" onClick={onNewChat}>
+        <button className="btn btn-primary new-chat-btn" onClick={() => handleAction(onNewChat)}>
           <Plus size={18} />
           <span>New Chat</span>
         </button>
@@ -81,7 +101,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <button
             className="btn btn-secondary memory-action-btn"
             title="Search past chats & memory"
-            onClick={() => onOpenMemory("search")}
+            onClick={() => handleAction(() => onOpenMemory("search"))}
           >
             <Search size={15} />
             <span>Search</span>
@@ -89,7 +109,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <button
             className="btn btn-secondary memory-action-btn"
             title="Profile Memory & Facts (About Me)"
-            onClick={() => onOpenMemory("about")}
+            onClick={() => handleAction(() => onOpenMemory("about"))}
           >
             <UserCheck size={15} />
             <span>About Me</span>
@@ -100,7 +120,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <button
             className="btn btn-secondary device-action-btn"
             title="Manage paired devices and generate QR shortcode"
-            onClick={onOpenDevices}
+            onClick={() => handleAction(onOpenDevices)}
           >
             <Smartphone size={15} />
             <span>Devices & Sync</span>
@@ -108,7 +128,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <button
             className="btn btn-secondary audit-action-btn"
             title="Inspect Agent Security & Audit Log"
-            onClick={onOpenAuditLog}
+            onClick={() => handleAction(onOpenAuditLog)}
           >
             <ShieldCheck size={15} />
             <span>Audit Log</span>
@@ -124,7 +144,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <button
               className="btn btn-secondary briefing-action-btn"
               title="Generate proactive morning briefing"
-              onClick={onTriggerBriefing}
+              onClick={() => handleAction(onTriggerBriefing)}
               style={{ width: "100%", justifyContent: "center", display: "flex", alignItems: "center", gap: 6 }}
             >
               <Sun size={15} color="#fbbf24" />
@@ -137,7 +157,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <button
               className="btn btn-accent install-pwa-btn"
               title="Install Aria as a native app on your phone or desktop"
-              onClick={onInstallPwa}
+              onClick={() => handleAction(onInstallPwa)}
             >
               <Download size={15} />
               <span>Install App</span>
@@ -156,7 +176,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <div
               key={session.id}
               className={`session-item ${session.id === activeSessionId ? "active" : ""}`}
-              onClick={() => onSelectSession(session.id)}
+              onClick={() => handleAction(() => onSelectSession(session.id))}
             >
               <MessageSquare size={16} style={{ flexShrink: 0, marginRight: 8, opacity: 0.7 }} />
               <span className="session-item-title">{session.title || "Untitled Session"}</span>

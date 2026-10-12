@@ -32,6 +32,7 @@ export const App: React.FC = () => {
 
   const [sessions, setSessions] = useState<Session[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
+  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState<boolean>(false);
 
   // PWA Install Prompt State
   const [installPromptEvent, setInstallPromptEvent] = useState<any>(null);
@@ -316,6 +317,13 @@ export const App: React.FC = () => {
         }}
       />
 
+      {isMobileSidebarOpen && (
+        <div
+          className="sidebar-backdrop"
+          onClick={() => setIsMobileSidebarOpen(false)}
+        />
+      )}
+
       <Sidebar
         sessions={sessions}
         activeSessionId={activeSessionId}
@@ -337,9 +345,11 @@ export const App: React.FC = () => {
         onInstallPwa={handleInstallPwa}
         notificationsEnabled={notificationsEnabled}
         onRequestNotifications={handleRequestNotifications}
+        isMobileOpen={isMobileSidebarOpen}
+        onCloseMobile={() => setIsMobileSidebarOpen(false)}
       />
 
-      <div style={{ flex: 1, display: "flex", flexDirection: "column", height: "100%", overflow: "hidden", position: "relative" }}>
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", height: "100%", overflow: "hidden", position: "relative", minWidth: 0 }}>
         {activeReminder && (
           <div className="proactive-alert-toast reminder">
             <div className="proactive-alert-icon">⏰</div>
@@ -383,6 +393,7 @@ export const App: React.FC = () => {
           onOpenAuditLog={() => setIsAuditModalOpen(true)}
           ttsEnabled={ttsEnabled}
           onToggleTts={handleToggleTts}
+          onToggleSidebar={() => setIsMobileSidebarOpen((prev) => !prev)}
         />
 
         <MessageInput onSendMessage={sendMessage} disabled={isStreaming} />
