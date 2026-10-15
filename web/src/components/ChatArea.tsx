@@ -210,8 +210,21 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
                   <Bot size={20} />
                 </div>
                 <div className="message-bubble assistant">
-                  {renderMarkdownContent(streamingContent)}
-                  <span className="typing-cursor" />
+                  {streamingContent ? (
+                    <>
+                      {renderMarkdownContent(streamingContent)}
+                      <span className="typing-cursor" />
+                    </>
+                  ) : (
+                    <div className="thinking-indicator">
+                      <div className="thinking-dots">
+                        <span className="thinking-dot" />
+                        <span className="thinking-dot" />
+                        <span className="thinking-dot" />
+                      </div>
+                      <span className="thinking-text">Aria is formulating response...</span>
+                    </div>
+                  )}
                 </div>
               </div>
             )}

@@ -359,6 +359,7 @@ export function useChat({
           })
         );
       } else {
+        setIsStreaming(false);
         setErrorMessage("Connection to local agent is offline. Reconnecting...");
         connectWs();
       }
