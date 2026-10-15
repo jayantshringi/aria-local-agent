@@ -13,6 +13,8 @@ from app.config import get_settings
 from app.db.connection import get_database
 from app.db.schema import init_db
 from app.llm.persona import load_persona
+from audio import router as audio_router
+from daemons import daemon_manager
 
 logging.basicConfig(
     level=logging.INFO,
@@ -49,9 +51,13 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     scheduler.start()
 
+    # 5. Start background proactive daemons (monitoring, file watching, proactive tasks)
+    await daemon_manager.start_all()
+
     yield
 
     # Teardown
+    await daemon_manager.stop_all()
     scheduler.shutdown()
     logger.info("Shutting down aria-local-agent daemon")
 
@@ -85,6 +91,7 @@ def create_app() -> FastAPI:
     app.include_router(agent.router)
     app.include_router(chat_ws.router)
     app.include_router(voice.router)
+    app.include_router(audio_router)
     app.include_router(scheduler.router)
     app.include_router(system.router)
 
